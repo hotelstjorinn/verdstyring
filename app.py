@@ -50,7 +50,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     "departure_date": checkout_dagur.strftime("%Y-%m-%d"),
                     "guest_qty": "2", 
                     "room_qty": "1",  
-                    "dest_id": dest_id,  # <--- HÉR ER VILLAN LÖGÐ (VAR dest_ids)
+                    "dest_id": dest_id,  
                     "search_type": search_type,
                     "price_filter_currencycode": "ISK" 
                 }
@@ -156,4 +156,29 @@ def main():
                     df_saman['Venjulegt meðalverð'] = df_saman['Venjulegt meðalverð'].round(0).astype(int)
                     df_saman['Vegið meðalverð'] = df_saman['Vegið meðalverð'].round(0).astype(int)
 
-                    df_saman['Venjulegt (sýnt)'] = df_saman['Venjulegt meðalverð'].apply(lambda x: f"{x:,} ISK".replace
+                    df_saman['Venjulegt (sýnt)'] = df_saman['Venjulegt meðalverð'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
+                    df_saman['Vegið (sýnt)'] = df_saman['Vegið meðalverð'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
+                    df_saman.index = np.arange(1, len(df_saman) + 1)
+                    
+                    st.dataframe(df_saman[['Dagsetning_str', 'Venjulegt (sýnt)', 'Vegið (sýnt)']], use_container_width=True)
+
+                    st.subheader("Verðþróun")
+                    fig = px.bar(df, x='Dagsetning_str', y='Verð (ISK)', color='Hótel', barmode='group')
+                    
+                    fig.add_scatter(x=df_saman['Dagsetning_str'], y=df_saman['Venjulegt meðalverð'], 
+                                    mode='lines+markers', name='Venjulegt meðaltal', 
+                                    line=dict(color='black', dash='dash', width=2))
+                    
+                    fig.add_scatter(x=df_saman['Dagsetning_str'], y=df_saman['Vegið meðalverð'], 
+                                    mode='lines+markers', name='Vegið meðaltal', 
+                                    line=dict(color='red', width=3))
+                    
+                    fig.update_yaxes(rangemode="tozero")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("Allt uppselt hjá öllum völdum hótelum á þessu tímabili!")
+        else:
+            st.error("Þú þarft að bæta við að minnsta kosti einum gististað vinstra megin áður en þú leitar!")
+
+if __name__ == "__main__":
+    main()
