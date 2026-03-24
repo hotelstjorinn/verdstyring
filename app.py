@@ -12,7 +12,7 @@ st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
 def saekja_raungogn(hotel_listi, fjoldi_daga):
     
     # ⚠️ HÉR ÞARFTU AÐ SETJA ÞINN EIGIN API LYKIL FRÁ RAPIDAPI ⚠️
-    API_KEY = "ÞINN_API_LYKILL_KEMUR_HÉR"
+    API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6"
     
     # Stoppar forritið og lætur þig vita ef þú hefur gleymt að setja lykilinn inn
     if API_KEY == "ÞINN_API_LYKILL_KEMUR_HÉR":
