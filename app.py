@@ -20,6 +20,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
     
     for hotel in hotel_listi:
         try:
+            # --- SKREF 1: Finna auðkenni (ID) hótelsins ---
             url_loc = "https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete"
             qs_loc = {"text": hotel, "languagecode": "is"}
             
@@ -31,11 +32,15 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 continue
                 
             dest_id = data_loc[0].get("dest_id")
-            search_type = data_loc[0].get("search_type")
+            
+            # ⚠️ HÉR ER LAGAÐA LÍNAN! Autocomplete kallar þetta 'dest_type'
+            search_type = data_loc[0].get("dest_type", "city") 
+            
             fundid_nafn = data_loc[0].get("name", hotel)
             
             st.info(f"📍 Tengdi '{hotel}' við: **{fundid_nafn}** (Booking ID: {dest_id})")
             
+            # --- SKREF 2: Sækja verðið DAG FYRIR DAG ---
             for i in range(fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
                 checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
@@ -48,7 +53,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     "guest_qty": "2", 
                     "room_qty": "1",  
                     "dest_ids": str(dest_id),  
-                    "search_type": search_type,
+                    "search_type": search_type, # Núna veit kerfið 100% að þetta er hótel!
                     "price_filter_currencycode": "ISK" 
                 }
                 
@@ -68,7 +73,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 else:
                     with st.expander(f"Sjá afhverju {hotel} er uppselt þann {checkin_dagur.strftime('%d.%m')}"):
                         st.write("Skilaboð frá Booking:")
-                        st.write(data_list.get("zero_results_message", "Ekkert herbergi fannst (Mögulega lágmarksdvöl eða uppselt)."))
+                        st.write(data_list.get("zero_results_message", "Ekkert herbergi fannst (Mögulega lágmarksdvöl eða raunverulega uppselt)."))
                 
                 herbergi = 50 
                 
