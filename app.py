@@ -32,10 +32,10 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 continue
                 
             dest_id = data_loc[0].get("dest_id")
-            search_type = data_loc[0].get("dest_type", "city") 
+            search_type = data_loc[0].get("dest_type", "hotel") 
             fundid_nafn = data_loc[0].get("name", hotel)
             
-            st.info(f"📍 Tengdi '{hotel}' við: **{fundid_nafn}** (Booking ID: {dest_id})")
+            st.info(f"📍 Leita að lausum herbergjum á: **{fundid_nafn}** (ID: {dest_id}, Tegund: {search_type})")
             
             # --- SKREF 2: Sækja verðið DAG FYRIR DAG ---
             for i in range(fjoldi_daga):
@@ -44,7 +44,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                  
                 url_list = "https://apidojo-booking-v1.p.rapidapi.com/properties/list"
                 
-                # HÉR ER LAUSNIN: Við verðum að taka fram að engin börn séu með!
+                # HÉR ER LAUSNIN: Berskjölduð og hrein leit, engar auka síur!
                 qs_list = {
                     "offset": "0",
                     "arrival_date": checkin_dagur.strftime("%Y-%m-%d"),
@@ -53,9 +53,8 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     "room_qty": "1",  
                     "dest_ids": str(dest_id),  
                     "search_type": search_type, 
-                    "price_filter_currencycode": "ISK",
-                    "children_qty": "0",  # <--- STOPPAR "VANTANDI BÖRN" VILLUNA
-                    "search_id": "none"
+                    "currency": "ISK",
+                    "locale": "en-gb"
                 }
                 
                 res_list = requests.get(url_list, headers=headers, params=qs_list)
@@ -72,9 +71,12 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     elif "composite_price_breakdown" in hotel_data:
                         verd = hotel_data["composite_price_breakdown"]["gross_amount"].get("value", 0)
                 else:
-                    with st.expander(f"Sjá afhverju {hotel} er uppselt þann {checkin_dagur.strftime('%d.%m')}"):
-                        st.write("Skilaboð frá Booking:")
-                        st.write(data_list)
+                    # Ný villuleit sem sýnir nákvæmlega hvaða spurningu við sendum á Booking!
+                    with st.expander(f"Villuleit fyrir {checkin_dagur.strftime('%d.%m')} (Smelltu hér)"):
+                        st.write("Spurningin okkar til Booking:")
+                        st.json(qs_list)
+                        st.write("Svarið frá Booking:")
+                        st.json(data_list)
                 
                 herbergi = 50 
                 
