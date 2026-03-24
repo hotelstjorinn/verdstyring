@@ -36,7 +36,6 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
             search_type = data_loc[0].get("search_type")
             
             # --- SKREF 2: Sækja verðið DAG FYRIR DAG ---
-            # Núna keyrum við API kall fyrir hvern einasta dag (1 nótt í einu)
             for i in range(fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
                 checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
@@ -60,3 +59,69 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 
                 # Ef við fáum svar og herbergi er laust þennan daginn, skráum við verðið
                 if "result" in data_list and len(data_list["result"]) > 0:
+                    hotel_data = data_list["result"][0]
+                    verd = hotel_data.get("min_total_price", 0)
+                
+                herbergi = 50 # Fastur fjöldi til að reikna vegið meðaltal í bili
+                
+                gogn.append({
+                    "Dagsetning": checkin_dagur, 
+                    "Hótel": hotel, 
+                    "Verð (ISK)": verd, 
+                    "Fjöldi herbergja": herbergi
+                })
+                    
+        except Exception as e:
+            st.error(f"Villa við að tengjast API fyrir {hotel}: {e}")
+            
+    return pd.DataFrame(gogn)
+# ==========================================
+
+def main():
+    st.title("🏨 Hótelstjórinn markaðsverð")
+
+    if 'valin_hotel' not in st.session_state:
+        st.session_state['valin_hotel'] = []
+
+    # --- HLIÐARSTIKA (LEIT OG LISTI) ---
+    st.sidebar.header("Leit")
+    
+    nytt_hotel = st.sidebar.text_input("Bæta við gististað (ýttu á Enter)")
+    
+    if nytt_hotel and nytt_hotel not in st.session_state['valin_hotel']:
+        st.session_state['valin_hotel'].append(nytt_hotel)
+
+    if len(st.session_state['valin_hotel']) > 0:
+        st.sidebar.markdown("### Valdir gististaðir:")
+        for i, hotel in enumerate(st.session_state['valin_hotel']):
+            st.sidebar.markdown(f"- **{hotel}**")
+            
+        if st.sidebar.button("Hreinsa allan lista"):
+            st.session_state['valin_hotel'] = []
+            st.rerun()
+
+    # --- TAKKAR FYRIR DAGA ---
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        btn_1 = st.button("Sækja verð markaðar núna")
+    with col2:
+        btn_7 = st.button("Sækja verð markaðar næstu 7 daga")
+    with col3:
+        btn_30 = st.button("Sækja verð markaðar næstu 30 daga")
+
+    dagar_valdir = 0
+    if btn_1: dagar_valdir = 1
+    elif btn_7: dagar_valdir = 7
+    elif btn_30: dagar_valdir = 30
+
+    if dagar_valdir > 0:
+        if len(st.session_state['valin_hotel']) > 0:
+            st.success(f"Sæki raungögn af Booking fyrir **{len(st.session_state['valin_hotel'])}** gististaði í **{dagar_valdir}** daga. Bíddu andartak...")
+            
+            df = saekja_raungogn(st.session_state['valin_hotel'], dagar_valdir) 
+
+            if not df.empty:
+                df['Staða'] = np.where(df['Verð (ISK)'] > 0, 'Laust', 'Uppselt')
+                df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)'], errors='coerce').fillna(0).astype(int)
+                df['Verð sýnt'] = df['Verð (ISK)'].apply(lambda x: f"{x:,}".replace(",", ".") if x > 0 else "")
+                df['Dagsetning_str'] = pd.to_datetime(
