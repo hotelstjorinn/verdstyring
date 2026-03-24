@@ -2,11 +2,9 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-import plotly.express as px
 
 st.set_page_config(page_title="Verðstýring", layout="wide")
 
-# 1. Öryggisathugun
 try:
     API_KEY = st.secrets["api_key"]
     API_HOST = st.secrets["api_host"]
@@ -19,7 +17,7 @@ st.title("🏨 Mín Verðstýring - Stjórnborð")
 if 'min_hotel' not in st.session_state:
     st.session_state.min_hotel = {}
 
-# --- HLIÐARSTIKA ---
+# --- HLIÐARSTIKA: LEIT ---
 st.sidebar.header("🔍 Leita að gististað")
 leitar_ord = st.sidebar.text_input("Nafn hótels:", key="search_input")
 
@@ -32,64 +30,83 @@ if leitar_ord:
         for item in data:
             if item.get('dest_type') == 'hotel':
                 nafn, h_id = item.get('label'), item.get('dest_id')
-                if st.sidebar.button(f"➕ Bæta við {nafn[:30]}...", key=f"btn_{h_id}"):
+                if st.sidebar.button(f"➕ Bæta við {nafn[:30]}...", key=f"btn_add_{h_id}"):
                     st.session_state.min_hotel[nafn] = h_id
                     st.rerun()
     except:
         pass
 
-# --- AÐALGLUGGI ---
+# --- AÐALGLUGGI: LISTINN ÞINN ---
 st.subheader("Gististaðir í vöktun")
 
 if st.session_state.min_hotel:
-    # LÖGUM NÚMERUN: Búum til DataFrame og breytum index
-    df_listi = pd.DataFrame([{"Nafn": k, "Booking ID": v} for k, v in st.session_state.min_hotel.items()])
-    df_listi.index = df_listi.index + 1  # Byrjar á 1 í stað 0
-    st.table(df_listi)
+    # Búum til lista með takka til að eyða
+    for nafn, h_id in list(st.session_state.min_hotel.items()):
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.write(f"🏨 **{nafn}** (ID: {h_id})")
+        with col2:
+            if st.button("❌ Eyða", key=f"del_{h_id}"):
+                del st.session_state.min_hotel[nafn]
+                st.rerun()
     
     st.divider()
 
-    # --- SÆKJA 30 DAGA VERÐ ---
-    if st.button("📊 Sækja 30-daga verðgreiningu núna"):
+    # --- SÆKJA VERÐ ---
+    if st.button("📊 Sækja verð markaðar núna"):
         all_prices = []
         progress_bar = st.progress(0)
         total = len(st.session_state.min_hotel)
         
-        with st.spinner("Sæki rauntímaverð fyrir næstu 30 daga..."):
+        with st.spinner("Sæki rauntímaverð..."):
             for i, (nafn, h_id) in enumerate(st.session_state.min_hotel.items()):
-                # Sækjum verðupplýsingar
-                url = f"https://{API_HOST}/properties/get-details"
+                # Notum "properties/list" sem er áreiðanlegra
+                url = f"https://{API_HOST}/properties/list"
                 
-                # Við spyrjum um verð fyrir næstu 30 daga
                 checkin = datetime.now().strftime("%Y-%m-%d")
                 checkout = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
                 
-                querystring = {"hotel_id": h_id, "checkin_date": checkin, "checkout_date": checkout, "currency": "ISK"}
+                querystring = {
+                    "dest_id": h_id,
+                    "search_type": "hotel",
+                    "arrival_date": checkin,
+                    "departure_date": checkout,
+                    "currencycode": "ISK"
+                }
                 headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": API_HOST}
                 
                 try:
                     response = requests.get(url, headers=headers, params=querystring)
                     res_data = response.json()
-                    # Náum í verðið (þetta er dæmi, byggt á API svari)
-                    price = res_data['data']['property']['v2_listing_cards'][0]['price_details']['gross_amount']['amount_unformatted']
-                    all_prices.append({"Hótel": nafn.split(',')[0], "Verð": price, "Dagur": "Í dag"})
-                except:
-                    all_prices.append({"Hótel": nafn.split(',')[0], "Verð": 0, "Dagur": "Villa"})
+                    
+                    # Reynum að finna verðið í niðurstöðunni
+                    price = 0
+                    if 'result' in res_data and len(res_data['result']) > 0:
+                        # Þetta er algengasta staðsetningin á verði í þessu API
+                        price = res_data['result'][0].get('min_total_price', 0)
+                        
+                    all_prices.append({"Hótel": nafn.split(',')[0], "Verð": price})
+                except Exception as e:
+                    all_prices.append({"Hótel": nafn.split(',')[0], "Verð": 0})
                 
                 progress_bar.progress((i + 1) / total)
 
-        # Sýna niðurstöður
+        # Birta niðurstöður
         df_prices = pd.DataFrame(all_prices)
-        st.subheader("Markaðsverð núna")
-        st.bar_chart(df_prices.set_index("Hótel")["Verð"])
+        st.subheader("Verð fyrir næstu nótt (ISK)")
         
-        meðaltal = df_prices[df_prices["Verð"] > 0]["Verð"].mean()
-        st.metric("Meðalverð markaðar", f"{meðaltal:,.0f} ISK")
-        st.success(f"💡 Ráðlagt verð fyrir þig (95% af meðaltali): {meðaltal * 0.95:,.0f} ISK")
+        # Birtum aðeins þá sem skiluðu verði stærra en 0
+        df_valid = df_prices[df_prices["Verð"] > 0]
+        
+        if not df_valid.empty:
+            st.bar_chart(df_valid.set_index("Hótel")["Verð"])
+            
+            meðaltal = df_valid["Verð"].mean()
+            st.metric("Meðalverð markaðar", f"{meðaltal:,.0f} ISK")
+            st.success(f"💡 Ráðlagt verð fyrir þig (95% af meðaltali): {meðaltal * 0.95:,.0f} ISK")
+        else:
+            st.warning("Ekkert verð fannst. Hótelin gætu verið uppseld eða API-ið er ekki að skila gögnum á þessu formi.")
+            st.dataframe(df_prices) # Sýna töfluna til að sjá hvar það klikkaði
 
 else:
-    st.info("Listinn þinn er tómur.")
-
-if st.button("Hreinsa allan listann"):
-    st.session_state.min_hotel = {}
-    st.rerun()
+    st.info("Listinn þinn er tómur. Notaðu leitina vinstra megin.")
