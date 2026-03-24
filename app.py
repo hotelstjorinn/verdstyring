@@ -79,11 +79,12 @@ if st.session_state.min_hotel:
                     checkin_date = datetime.now() + timedelta(days=dagur)
                     checkout_date = checkin_date + timedelta(days=1)
                     
-                    # RÉTT SLÓÐ FYRIR ÞETTA API ER '/properties/list'
                     url = f"https://{API_HOST}/properties/list"
+                    
+                    # BREYTINGIN ER HÉR UNDIR ("search_type": "hotel")
                     querystring = {
                         "dest_id": h_id,
-                        "dest_type": "hotel",
+                        "search_type": "hotel", 
                         "arrival_date": checkin_date.strftime("%Y-%m-%d"),
                         "departure_date": checkout_date.strftime("%Y-%m-%d"),
                         "room_qty": "1",
@@ -98,13 +99,11 @@ if st.session_state.min_hotel:
                         
                         price = 0
                         try:
-                            # Hér finnum við verðið í nýja svarinu frá API-inu
                             results = res_data.get('result', [])
                             if results and len(results) > 0:
                                 hotel_data = results[0]
                                 price = hotel_data.get('min_total_price', 0)
                                 if price == 0:
-                                    # Varakostur ef verðið heitir eitthvað annað
                                     price = hotel_data.get('composite_price_breakdown', {}).get('gross_amount', {}).get('value', 0)
                         except:
                             pass
@@ -138,10 +137,10 @@ if st.session_state.min_hotel:
                 st.bar_chart(df_valid.set_index("Hótel")["Verð"])
                 
             meðaltal = df_valid["Verð"].mean()
-            st.metric("Meðalverð", f"{meðaltal:,.0f} ISK")
+            st.metric("Meðalverð markaðar", f"{meðaltal:,.0f} ISK")
         else:
             st.error("⚠️ Appið fær ennþá 0 kr. frá Booking API-inu.")
-            st.write("Villan 'Endpoint does not exist' er nú farin, en hér eru nýju gögnin frá Booking. **Sendu mér skjáskot af gula kassanum ef hann birtist!**")
+            st.write("Skjáskotið þitt síðast leysti málið! En ef það kemur NÝ villa núna, sendu mér hana:")
             if debug_data:
                 st.json(debug_data)
 
