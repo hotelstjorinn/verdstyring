@@ -20,7 +20,6 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
     
     for hotel in hotel_listi:
         try:
-            # --- SKREF 1: Finna auðkenni (ID) hótelsins ---
             url_loc = "https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete"
             qs_loc = {"text": hotel, "languagecode": "is"}
             
@@ -35,10 +34,8 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
             search_type = data_loc[0].get("search_type")
             fundid_nafn = data_loc[0].get("name", hotel)
             
-            # Látum notandann vita nákvæmlega hvað Booking fann
             st.info(f"📍 Tengdi '{hotel}' við: **{fundid_nafn}** (Booking ID: {dest_id})")
             
-            # --- SKREF 2: Sækja verðið DAG FYRIR DAG ---
             for i in range(fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
                 checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
@@ -60,16 +57,19 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 
                 verd = 0 
                 
-                # Leita að verðinu í svarinu frá API
                 if "result" in data_list and len(data_list["result"]) > 0:
                     hotel_data = data_list["result"][0]
-                    # Reynum að finna verðið (mismunandi eftir því hvort þetta er hótel eða gistiheimili)
                     if "min_total_price" in hotel_data:
                         verd = hotel_data.get("min_total_price", 0)
                     elif "price_breakdown" in hotel_data:
                         verd = hotel_data["price_breakdown"].get("gross_price", 0)
                     elif "composite_price_breakdown" in hotel_data:
                         verd = hotel_data["composite_price_breakdown"]["gross_amount"].get("value", 0)
+                else:
+                    # BÆTT VIÐ: Villuleit ef það er uppselt
+                    with st.expander(f"Sjá afhverju {hotel} er uppselt þann {checkin_dagur.strftime('%d.%m')}"):
+                        st.write("API svarið frá Booking (Ef result er tómur listi [] er hótelið raunverulega uppselt eða krefst lágmarksdvalar):")
+                        st.write(data_list)
                 
                 herbergi = 50 
                 
