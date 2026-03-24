@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 import datetime
 import requests
-import io  # NÝTT: Til að búa til Excel skjal í minninu
+import io  
 
 # ÞETTA VERÐUR AÐ VERA FYRSTA LÍNAN
 st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
@@ -239,25 +239,59 @@ def main():
                     st.plotly_chart(fig, use_container_width=True)
                     
                     # ==========================================
-                    # NÝTT: ALVÖRU EXCEL NIÐURHAL MEÐ FLIPUM
+                    # EXCEL NIÐURHAL MEÐ SÚLURITI
                     # ==========================================
                     st.markdown("---")
                     st.subheader("📥 Sækja skýrslu")
                     
-                    # Búum til Excel skjal í minninu
                     output = io.BytesIO()
                     
                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                         # FLIPI 1: Öll gögnin
                         gogn_ut = df[['Dagsetning_obj', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
-                        gogn_ut.rename(columns={'Dagsetning_obj': 'Dagsetning (Kóði)'}, inplace=True)
+                        gogn_ut.rename(columns={'Dagsetning_obj': 'Dagsetning'}, inplace=True)
+                        # Breytum í dagsetningar-format fyrir Excel
+                        gogn_ut['Dagsetning'] = gogn_ut['Dagsetning'].dt.date 
                         gogn_ut.to_excel(writer, sheet_name='Öll gögn', index=False)
                         
-                        # FLIPI 2: Meðalverð (Hreinar tölur, tilbúið fyrir línurit í Excel)
-                        # Við notum upprunalegu töludálkana 'Venjulegt' og 'Vegið' svo hægt sé að gera línurit
+                        # FLIPI 2: Meðalverð og SÚLURIT
                         medaltal_ut = df_saman[['Dagsetning', 'Venjulegt', 'Vegið']].copy()
                         medaltal_ut.rename(columns={'Venjulegt': 'Venjulegt meðalverð', 'Vegið': 'Vegið meðalverð'}, inplace=True)
                         medaltal_ut.to_excel(writer, sheet_name='Meðalverð Markaðar', index=False)
+                        
+                        # --- Hér búum við til ritið beint inn í Excel ---
+                        workbook = writer.book
+                        worksheet = writer.sheets['Meðalverð Markaðar']
+                        
+                        # Búum til nýtt súlurit ('column' = lóðréttar súlur)
+                        chart = workbook.add_chart({'type': 'column'})
+                        
+                        max_row = len(medaltal_ut)
+                        
+                        # Bætum Venjulega meðalverðinu á grafið
+                        chart.add_series({
+                            'name':       ['Meðalverð Markaðar', 0, 1], # Nafnið er í dálki B, röð 1
+                            'categories': ['Meðalverð Markaðar', 1, 0, max_row, 0], # Dagsetningar í dálki A
+                            'values':     ['Meðalverð Markaðar', 1, 1, max_row, 1], # Tölurnar í dálki B
+                            'fill':       {'color': '#4C78A8'} # Blár litur
+                        })
+                        
+                        # Bætum Vegna meðalverðinu á grafið
+                        chart.add_series({
+                            'name':       ['Meðalverð Markaðar', 0, 2], # Nafnið er í dálki C, röð 1
+                            'categories': ['Meðalverð Markaðar', 1, 0, max_row, 0], # Dagsetningar í dálki A
+                            'values':     ['Meðalverð Markaðar', 1, 2, max_row, 2], # Tölurnar í dálki C
+                            'fill':       {'color': '#E45756'} # Rauður litur
+                        })
+                        
+                        # Stillingar á útlitinu
+                        chart.set_title({'name': 'Meðalverð Markaðar (Súlurit)'})
+                        chart.set_x_axis({'name': 'Dagsetning'})
+                        chart.set_y_axis({'name': 'Verð (ISK)'})
+                        chart.set_size({'width': 720, 'height': 400})
+                        
+                        # Setjum grafið inn á síðuna hægra megin við gögnin (í reit E2)
+                        worksheet.insert_chart('E2', chart)
                     
                     excel_data = output.getvalue()
                     
