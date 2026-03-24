@@ -3,24 +3,69 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import datetime
+import requests
 
 st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
 
 # ==========================================
-# GERVIGÖGN - Núna með "Fjölda herbergja" til að geta reiknað vegið meðaltal
-def saekja_gervigogn(hotel_listi, fjoldi_daga):
+# RAUNGÖGN - Sækir upplýsingar af netinu í gegnum API
+def saekja_raungogn(hotel_listi, fjoldi_daga):
+    
+    # ⚠️ HÉR ÞARFTU AÐ SETJA ÞINN EIGIN API LYKIL FRÁ RAPIDAPI ⚠️
+    API_KEY = "ÞINN_API_LYKILL_KEMUR_HÉR"
+    
+    # Stoppar forritið og lætur þig vita ef þú hefur gleymt að setja lykilinn inn
+    if API_KEY == "ÞINN_API_LYKILL_KEMUR_HÉR":
+        st.error("⚠️ Þú verður að setja inn raunverulegan API lykil í kóðann (línu 15) til að sækja gögn af netinu!")
+        return pd.DataFrame()
+
     idag = datetime.date.today()
+    lokadagur = idag + datetime.timedelta(days=fjoldi_daga)
     gogn = []
     
-    # Búum til fastan fjölda herbergja (vægi) fyrir hvert hótel í þessari leit
-    hotel_staerdir = {hotel: np.random.randint(20, 150) for hotel in hotel_listi}
-    
     for hotel in hotel_listi:
-        herbergi = hotel_staerdir[hotel]
-        for i in range(fjoldi_daga):
-            dagur = idag + datetime.timedelta(days=i)
-            verd = np.random.choice([0, 24846, 32638, 15000, 28000, 42000]) 
-            gogn.append({"Dagsetning": dagur, "Hótel": hotel, "Verð (ISK)": verd, "Fjöldi herbergja": herbergi})
+        # Þetta er dæmi um slóð á vinsælt Booking API á RapidAPI
+        url = "https://booking-com.p.rapidapi.com/v1/hotels/search"
+        
+        querystring = {
+            "query": hotel,
+            "checkout_date": lokadagur.strftime("%Y-%m-%d"),
+            "checkin_date": idag.strftime("%Y-%m-%d"),
+            "units": "metric",
+            "currency": "ISK" # Viljum verðið í krónum
+        }
+        
+        headers = {
+            "X-RapidAPI-Key": API_KEY,
+            "X-RapidAPI-Host": "booking-com.p.rapidapi.com"
+        }
+        
+        try:
+            # Sækjum gögnin!
+            response = requests.get(url, headers=headers, params=querystring)
+            gogn_fra_api = response.json()
+            
+            # Reynum að lesa verðið út úr svarinu (þetta gæti þurft að fínstilla eftir API)
+            if 'result' in gogn_fra_api and len(gogn_fra_api['result']) > 0:
+                fyrsta_nidurstada = gogn_fra_api['result'][0]
+                verd = fyrsta_nidurstada.get('min_total_price', 0)
+                herbergi = 50 # Setjum fasta tölu fyrst um sinn ef API skilar ekki herbergjafjölda
+                
+                # Setjum verðið inn á dagana
+                for i in range(fjoldi_daga):
+                     dagur = idag + datetime.timedelta(days=i)
+                     gogn.append({
+                         "Dagsetning": dagur, 
+                         "Hótel": hotel, 
+                         "Verð (ISK)": verd, 
+                         "Fjöldi herbergja": herbergi
+                     })
+            else:
+                st.warning(f"Fann engar verðupplýsingar fyrir {hotel} á þessum dögum.")
+                
+        except Exception as e:
+            st.error(f"Villa við að sækja gögn fyrir {hotel}: {e}")
+            
     return pd.DataFrame(gogn)
 # ==========================================
 
@@ -64,14 +109,10 @@ def main():
     # Ef ýtt var á takka...
     if dagar_valdir > 0:
         if len(st.session_state['valin_hotel']) > 0:
-            st.success(f"Sæki gögn fyrir **{len(st.session_state['valin_hotel'])}** gististaði í **{dagar_valdir}** daga. Bíddu andartak...")
+            st.success(f"Sæki raungögn fyrir **{len(st.session_state['valin_hotel'])}** gististaði í **{dagar_valdir}** daga. Bíddu andartak...")
             
-            # ==========================================
-            # ⚠️ HÉR KEMUR ÞINN ALVÖRU KÓÐI ⚠️
-            # Til að vegið meðaltal virki þarf þinn kóði að skila dálki sem 
-            # heitir "Fjöldi herbergja" eða "Vægi" fyrir hvert hótel!
-            df = saekja_gervigogn(st.session_state['valin_hotel'], dagar_valdir) 
-            # ==========================================
+            # --- KALLAR Á NÝJA API FALLIÐ! ---
+            df = saekja_raungogn(st.session_state['valin_hotel'], dagar_valdir) 
 
             if not df.empty:
                 # Undirbúum aðaltöfluna
@@ -82,7 +123,6 @@ def main():
                 df.index = np.arange(1, len(df) + 1)
 
                 st.subheader(f"Verðyfirlit ({dagar_valdir} dagar)")
-                # Bætti við Fjölda herbergja í sýnina svo maður sjái vægið
                 st.dataframe(df[['Dagsetning_str', 'Hótel', 'Fjöldi herbergja', 'Verð sýnt', 'Staða']], use_container_width=True)
 
                 # --- REIKNUM BÆÐI MEÐALTÖLIN ---
@@ -90,11 +130,11 @@ def main():
                 df_laust = df[df['Verð (ISK)'] > 0].copy()
                 
                 if not df_laust.empty:
-                    # 1. Venjulegt meðaltal (óvegið)
+                    # 1. Venjulegt meðaltal
                     df_medaltal = df_laust.groupby('Dagsetning_str')['Verð (ISK)'].mean().reset_index()
                     df_medaltal.rename(columns={'Verð (ISK)': 'Venjulegt meðalverð'}, inplace=True)
 
-                    # 2. Vegið meðaltal (Verð * Herbergi / Heildar herbergi)
+                    # 2. Vegið meðaltal
                     df_laust['Verð_Vægi'] = df_laust['Verð (ISK)'] * df_laust['Fjöldi herbergja']
                     df_veg = df_laust.groupby('Dagsetning_str').agg(
                         Summa_Verð_Vægi=('Verð_Vægi', 'sum'),
@@ -102,30 +142,26 @@ def main():
                     ).reset_index()
                     df_veg['Vegið meðalverð'] = df_veg['Summa_Verð_Vægi'] / df_veg['Summa_Herbergi']
 
-                    # Sameinum töflurnar
+                    # Sameinum
                     df_saman = pd.merge(df_medaltal, df_veg[['Dagsetning_str', 'Vegið meðalverð']], on='Dagsetning_str')
                     
-                    # Tökum til aukastafi og setjum upp fyrir töflu
                     df_saman['Venjulegt meðalverð'] = df_saman['Venjulegt meðalverð'].round(0).astype(int)
                     df_saman['Vegið meðalverð'] = df_saman['Vegið meðalverð'].round(0).astype(int)
 
-                    # Búum til flott texta-format fyrir töfluna ("ISK")
                     df_saman['Venjulegt (sýnt)'] = df_saman['Venjulegt meðalverð'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
                     df_saman['Vegið (sýnt)'] = df_saman['Vegið meðalverð'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
                     df_saman.index = np.arange(1, len(df_saman) + 1)
                     
                     st.dataframe(df_saman[['Dagsetning_str', 'Venjulegt (sýnt)', 'Vegið (sýnt)']], use_container_width=True)
 
-                    # --- SÚLURIT MEÐ BÁÐUM LÍNUM ---
+                    # --- SÚLURIT ---
                     st.subheader("Verðþróun")
                     fig = px.bar(df, x='Dagsetning_str', y='Verð (ISK)', color='Hótel', barmode='group')
                     
-                    # Lína 1: Venjulegt meðaltal (Svört brotin lína)
                     fig.add_scatter(x=df_saman['Dagsetning_str'], y=df_saman['Venjulegt meðalverð'], 
                                     mode='lines+markers', name='Venjulegt meðaltal', 
                                     line=dict(color='black', dash='dash', width=2))
                     
-                    # Lína 2: Vegið meðaltal (Rauð heil lína)
                     fig.add_scatter(x=df_saman['Dagsetning_str'], y=df_saman['Vegið meðalverð'], 
                                     mode='lines+markers', name='Vegið meðaltal', 
                                     line=dict(color='red', width=3))
