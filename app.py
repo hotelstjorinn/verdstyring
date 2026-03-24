@@ -211,7 +211,6 @@ def main():
                     df_saman['Venjulegt'] = df_saman['Venjulegt'].round(0).astype(int)
                     df_saman['Vegið'] = df_saman['Vegið'].round(0).astype(int)
 
-                    # HÉR ER BREYTINGIN FYRIR TÖFLUNA
                     df_saman['Meðalverð'] = df_saman['Venjulegt'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
                     df_saman['Vegið meðalverð'] = df_saman['Vegið'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
                     
@@ -223,7 +222,6 @@ def main():
                     st.subheader("Verðþróun")
                     fig = px.bar(df, x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group')
                     
-                    # HÉR ER BREYTINGIN FYRIR LÍNURITIÐ
                     fig.add_scatter(
                         x=df_saman['Dagsetning'], y=df_saman['Venjulegt'], 
                         mode='lines+markers', name='Meðalverð', 
@@ -238,6 +236,25 @@ def main():
                     
                     fig.update_yaxes(rangemode="tozero")
                     st.plotly_chart(fig, use_container_width=True)
+                    
+                    # ==========================================
+                    # NÝTT: NIÐURHALSTAKKI FYRIR EXCEL/CSV
+                    # ==========================================
+                    st.markdown("---")
+                    st.subheader("📥 Sækja skýrslu")
+                    
+                    # Búum til CSV skrá úr aðalgögnunum (df). utf-8-sig tryggir að Excel lesi íslenska stafi rétt.
+                    csv_gogn = df[['Dagsetning_obj', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
+                    csv_gogn.rename(columns={'Dagsetning_obj': 'Dagsetning (Kóði)'}, inplace=True)
+                    csv_data = csv_gogn.to_csv(index=False).encode('utf-8-sig')
+                    
+                    st.download_button(
+                        label=f"Sækja öll gögn ({dagar_valdir} dagar) sem CSV skjal",
+                        data=csv_data,
+                        file_name=f"markadsverd_{dagar_valdir}dagar_{datetime.date.today()}.csv",
+                        mime="text/csv"
+                    )
+                    
                 else:
                     st.warning("Ekkert verð fannst (Flettu upp í API svarinu hér að ofan til að sjá ástæðuna).")
         else:
