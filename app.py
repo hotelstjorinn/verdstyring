@@ -40,8 +40,9 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
                 checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
                 
-                # HÉR ER STÓRA BREYTINGIN:
-                # Ef kerfið sér að við leitum að stökum Gististað, þá notar hún GET-ROOMS!
+                verd = 0 
+                
+                # Ef þetta er stakt hótel, þá er 'get-rooms' notað!
                 if search_type == "hotel":
                     url_api = "https://apidojo-booking-v1.p.rapidapi.com/properties/v2/get-rooms"
                     qs_api = {
@@ -52,6 +53,28 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                         "rec_room_qty": "1",
                         "currency_code": "ISK"
                     }
+                    res_api = requests.get(url_api, headers=headers, params=qs_api)
+                    data_api = res_api.json()
+                    
+                    # NÝTT OG BÆTT VERÐ-VEIÐI KERFI (Byggt á því sem þú sýndir mér!)
+                    if isinstance(data_api, list) and len(data_api) > 0:
+                        first_item = data_api[0]
+                        # Skoðum tpi_block -> min_price
+                        if "tpi_block" in first_item and len(first_item["tpi_block"]) > 0:
+                            tpi_b = first_item["tpi_block"][0]
+                            if "min_price" in tpi_b and "price" in tpi_b["min_price"]:
+                                verd = tpi_b["min_price"]["price"]
+                        
+                        # Ef hitt finnst ekki, reynum við að veiða inni í block listanum
+                        if not verd or verd == 0:
+                            if "block" in first_item and len(first_item["block"]) > 0:
+                                block0 = first_item["block"][0]
+                                if "product_price_breakdown" in block0:
+                                    ppb = block0["product_price_breakdown"]
+                                    if "gross_amount" in ppb and "value" in ppb["gross_amount"]:
+                                        verd = ppb["gross_amount"]["value"]
+                
+                # Ef þetta er ekki stakt hótel (eða ef forritið fer hingað í staðinn)
                 else:
                     url_api = "https://apidojo-booking-v1.p.rapidapi.com/properties/list"
                     qs_api = {
@@ -65,17 +88,23 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                         "price_filter_currencycode": "ISK",
                         "children_qty": "0"
                     }
-                
-                res_api = requests.get(url_api, headers=headers, params=qs_api)
-                data_api = res_api.json()
-                
-                verd = 0 
-                
-                # Birtum API svarið nákvæmlega eins og það kemur frá nýju vélinni
-                with st.expander(f"🔍 Sjá nýja API svarið fyrir {checkin_dagur.strftime('%d.%m')} (Smelltu hér)"):
-                    st.write(f"Notuðum vélina: {url_api}")
-                    st.write("Svarið var:")
-                    st.json(data_api)
+                    res_api = requests.get(url_api, headers=headers, params=qs_api)
+                    data_api = res_api.json()
+                    
+                    if "result" in data_api and len(data_api["result"]) > 0:
+                        hotel_data = data_api["result"][0]
+                        if "composite_price_breakdown" in hotel_data and "gross_amount" in hotel_data["composite_price_breakdown"]:
+                            verd = hotel_data["composite_price_breakdown"]["gross_amount"].get("value", 0)
+                        elif "priceBreakdown" in hotel_data and "grossPrice" in hotel_data["priceBreakdown"]:
+                            verd = hotel_data["priceBreakdown"]["grossPrice"].get("value", 0)
+                        elif "min_total_price" in hotel_data:
+                            verd = hotel_data.get("min_total_price", 0)
+
+                # NÁRUM VIÐ ENNÞÁ EKKI VERÐINU? Birtum þá villugluggann svo við getum séð hvar það lak.
+                if not verd or verd == 0:
+                    with st.expander(f"🔍 Fann ekki verð fyrir {checkin_dagur.strftime('%d.%m')} - Smelltu til að sjá Gögn"):
+                         st.write("Vélin fékk þessi gögn en gat ekki pikkað verðið út:")
+                         st.json(data_api)
                 
                 herbergi = 50 
                 
@@ -134,7 +163,7 @@ def main():
             df = saekja_raungogn(st.session_state['valin_hotel'], dagar_valdir) 
 
             if not df.empty:
-                df['Staða'] = np.where(df['Verð (ISK)'] > 0, 'Laust', 'Uppselt / Ófundið')
+                df['Staða'] = np.where(df['Verð (ISK)'] > 0, 'Laust', 'Uppselt')
                 df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)'], errors='coerce').fillna(0).astype(int)
                 
                 df['Verð sýnt'] = df['Verð (ISK)'].apply(
