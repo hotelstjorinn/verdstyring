@@ -32,10 +32,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 continue
                 
             dest_id = data_loc[0].get("dest_id")
-            
-            # ⚠️ HÉR ER LAGAÐA LÍNAN! Autocomplete kallar þetta 'dest_type'
             search_type = data_loc[0].get("dest_type", "city") 
-            
             fundid_nafn = data_loc[0].get("name", hotel)
             
             st.info(f"📍 Tengdi '{hotel}' við: **{fundid_nafn}** (Booking ID: {dest_id})")
@@ -46,6 +43,8 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
                  
                 url_list = "https://apidojo-booking-v1.p.rapidapi.com/properties/list"
+                
+                # HÉR ER LAUSNIN: Við verðum að taka fram að engin börn séu með!
                 qs_list = {
                     "offset": "0",
                     "arrival_date": checkin_dagur.strftime("%Y-%m-%d"),
@@ -53,8 +52,10 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     "guest_qty": "2", 
                     "room_qty": "1",  
                     "dest_ids": str(dest_id),  
-                    "search_type": search_type, # Núna veit kerfið 100% að þetta er hótel!
-                    "price_filter_currencycode": "ISK" 
+                    "search_type": search_type, 
+                    "price_filter_currencycode": "ISK",
+                    "children_qty": "0",  # <--- STOPPAR "VANTANDI BÖRN" VILLUNA
+                    "search_id": "none"
                 }
                 
                 res_list = requests.get(url_list, headers=headers, params=qs_list)
@@ -73,7 +74,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 else:
                     with st.expander(f"Sjá afhverju {hotel} er uppselt þann {checkin_dagur.strftime('%d.%m')}"):
                         st.write("Skilaboð frá Booking:")
-                        st.write(data_list.get("zero_results_message", "Ekkert herbergi fannst (Mögulega lágmarksdvöl eða raunverulega uppselt)."))
+                        st.write(data_list)
                 
                 herbergi = 50 
                 
