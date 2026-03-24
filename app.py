@@ -4,82 +4,66 @@ import numpy as np
 import plotly.express as px
 import datetime
 import requests
+from bs4 import BeautifulSoup
+import urllib.parse
+import re
 
 st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
 
 # ==========================================
-def saekja_raungogn(hotel_listi, fjoldi_daga):
-    API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6"
+def saekja_med_skofun(hotel_listi, fjoldi_daga):
     idag = datetime.date.today()
     gogn = []
     
+    # Við þykjumst vera venjulegur vafri svo Booking loki ekki á okkur strax
     headers = {
-        "X-RapidAPI-Key": API_KEY,
-        "X-RapidAPI-Host": "apidojo-booking-v1.p.rapidapi.com"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "is-IS,is;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Referer": "https://www.booking.com/"
     }
     
     for hotel in hotel_listi:
-        try:
-            url_loc = "https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete"
-            qs_loc = {"text": hotel, "languagecode": "is"}
+        st.info(f"📍 Sendi vélmenni beint á Booking.com til að leita að: **{hotel}**")
+        
+        for i in range(fjoldi_daga):
+            checkin_dagur = idag + datetime.timedelta(days=i)
+            checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
             
-            res_loc = requests.get(url_loc, headers=headers, params=qs_loc)
-            data_loc = res_loc.json()
+            checkin_str = checkin_dagur.strftime("%Y-%m-%d")
+            checkout_str = checkout_dagur.strftime("%Y-%m-%d")
             
-            if not data_loc or len(data_loc) == 0:
-                st.warning(f"Booking fann ekki gististaðinn: '{hotel}'")
-                continue
-                
-            dest_id = data_loc[0].get("dest_id")
-            search_type = data_loc[0].get("dest_type", "hotel") 
-            fundid_nafn = data_loc[0].get("name", hotel)
+            # Smíðum nákvæmlega sömu slóð og þú myndir slá inn í vafrann þinn
+            hotel_encoded = urllib.parse.quote_plus(hotel)
+            url = f"https://www.booking.com/searchresults.is.html?ss={hotel_encoded}&checkin={checkin_str}&checkout={checkout_str}&group_adults=2&no_rooms=1&group_children=0&currency=ISK"
             
-            st.info(f"📍 Leita að lausum herbergjum á: **{fundid_nafn}** (ID: {dest_id}, Tegund: {search_type})")
-            
-            for i in range(fjoldi_daga):
-                checkin_dagur = idag + datetime.timedelta(days=i)
-                checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
-                 
-                url_list = "https://apidojo-booking-v1.p.rapidapi.com/properties/list"
+            try:
+                # Sækjum vefsíðuna beint
+                res = requests.get(url, headers=headers, timeout=15)
+                soup = BeautifulSoup(res.text, 'html.parser')
                 
-                qs_list = {
-                    "offset": "0",
-                    "arrival_date": checkin_dagur.strftime("%Y-%m-%d"),
-                    "departure_date": checkout_dagur.strftime("%Y-%m-%d"),
-                    "guest_qty": "2", 
-                    "room_qty": "1",  
-                    "dest_ids": str(dest_id),  
-                    "search_type": search_type, 
-                    "currency": "ISK",
-                    "locale": "en-gb",
-                    "children_qty": "0" 
-                }
+                verd = 0
                 
-                res_list = requests.get(url_list, headers=headers, params=qs_list)
-                data_list = res_list.json()
-                
-                verd = 0 
-                
-                if "result" in data_list and len(data_list["result"]) > 0:
-                    hotel_data = data_list["result"][0]
-                    
-                    if "composite_price_breakdown" in hotel_data and "gross_amount" in hotel_data["composite_price_breakdown"]:
-                        verd = hotel_data["composite_price_breakdown"]["gross_amount"].get("value", 0)
-                    elif "priceBreakdown" in hotel_data and "grossPrice" in hotel_data["priceBreakdown"]:
-                        verd = hotel_data["priceBreakdown"]["grossPrice"].get("value", 0)
-                    elif "min_total_price" in hotel_data:
-                        verd = hotel_data.get("min_total_price", 0)
-                    
-                    if not verd or verd == 0:
-                        with st.expander(f"🔍 Fann hótelið en vantar verð fyrir {checkin_dagur.strftime('%d.%m')}"):
-                            st.write("Gögnin um hótelið litu svona út. Hvar er verðið falið?")
-                            st.json(hotel_data)
-                        verd = 0
+                # Athugum hvort Booking sé að heimta CAPTCHA (að sanna að við séum mennsk)
+                if "px-captcha" in res.text or "Verify you are human" in res.text:
+                    with st.expander(f"⚠️ Booking.com stoppaði vélmennið okkar þann {checkin_dagur.strftime('%d.%m')}"):
+                        st.error("Booking fór í vörn og bað um CAPTCHA staðfestingu. Vefskröpun var stöðvuð.")
+                        st.write(f"Slóðin sem við reyndum: {url}")
                 else:
-                    with st.expander(f"🔍 Sjá ALLT svarið frá Booking fyrir {checkin_dagur.strftime('%d.%m')}"):
-                        st.write("Booking API svaraði með tómum lista.")
-                        st.write("Hér er allt JSON svarið. Gefðu mér skjáskot af þessu:")
-                        st.json(data_list)
+                    # Leitum að verðinu í HTML kóðanum. Booking notar oft þennan 'data-testid' fyrir verð í leitarvél
+                    price_element = soup.find(attrs={"data-testid": "price-and-discounted-price"})
+                    
+                    if price_element:
+                        # Hreinsum textann ("ISK 21.778" -> 21778)
+                        price_text = price_element.get_text()
+                        tala_str = re.sub(r'[^\d]', '', price_text)
+                        if tala_str.isdigit():
+                            verd = int(tala_str)
+                    else:
+                        # Ef við finnum ekki price-elementið, þá er annað hvort uppselt EÐA Booking breytti útlitinu hjá sér
+                        with st.expander(f"🔍 Fann ekki verð á vefsíðunni þann {checkin_dagur.strftime('%d.%m')} (Mögulega uppselt)"):
+                            st.write(f"Skoðaðu þessa slóð sjálf/ur til að staðfesta hvort það sé raunverulega uppselt eða hvort okkur tókst ekki að lesa verðið:")
+                            st.markdown(f"[Smelltu hér til að opna Booking.com fyrir þennan dag]({url})")
                 
                 herbergi = 50 
                 
@@ -89,15 +73,15 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     "Verð (ISK)": verd, 
                     "Fjöldi herbergja": herbergi
                 })
-                    
-        except Exception as e:
-            st.error(f"Villa við að tengjast API fyrir {hotel}: {e}")
+                
+            except Exception as e:
+                st.error(f"Villa við að skrapa vefsíðu fyrir {hotel} þann {checkin_str}: {e}")
             
     return pd.DataFrame(gogn)
 # ==========================================
 
 def main():
-    st.title("🏨 Hótelstjórinn markaðsverð")
+    st.title("🏨 Hótelstjórinn markaðsverð (Bein skröpun)")
 
     if 'valin_hotel' not in st.session_state:
         st.session_state['valin_hotel'] = []
@@ -120,11 +104,11 @@ def main():
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        btn_1 = st.button("Sækja verð markaðar núna")
+        btn_1 = st.button("Sækja verð núna")
     with col2:
-        btn_7 = st.button("Sækja verð markaðar næstu 7 daga")
+        btn_7 = st.button("Sækja verð næstu 7 daga")
     with col3:
-        btn_30 = st.button("Sækja verð markaðar næstu 30 daga")
+        btn_30 = st.button("Sækja verð næstu 30 daga")
 
     dagar_valdir = 0
     if btn_1: dagar_valdir = 1
@@ -133,12 +117,12 @@ def main():
 
     if dagar_valdir > 0:
         if len(st.session_state['valin_hotel']) > 0:
-            st.success(f"Sæki raungögn af Booking fyrir **{len(st.session_state['valin_hotel'])}** gististaði í **{dagar_valdir}** daga. Bíddu andartak...")
+            st.success(f"Beini vöfrum að Booking.com fyrir **{len(st.session_state['valin_hotel'])}** gististaði í **{dagar_valdir}** daga. Þetta gæti tekið smá stund...")
             
-            df = saekja_raungogn(st.session_state['valin_hotel'], dagar_valdir) 
+            df = saekja_med_skofun(st.session_state['valin_hotel'], dagar_valdir) 
 
             if not df.empty:
-                df['Staða'] = np.where(df['Verð (ISK)'] > 0, 'Laust', 'Uppselt')
+                df['Staða'] = np.where(df['Verð (ISK)'] > 0, 'Laust', 'Uppselt / Fannst ekki')
                 df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)'], errors='coerce').fillna(0).astype(int)
                 
                 df['Verð sýnt'] = df['Verð (ISK)'].apply(
@@ -205,7 +189,7 @@ def main():
                     fig.update_yaxes(rangemode="tozero")
                     st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.warning("Allt uppselt hjá öllum völdum hótelum á þessu tímabili!")
+                    st.warning("Ekkert verð fannst (Mögulega lokaði Booking á okkur, eða allt er uppselt).")
         else:
             st.error("Þú þarft að bæta við að minnsta kosti einum gististað vinstra megin áður en þú leitar!")
 
