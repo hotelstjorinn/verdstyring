@@ -59,4 +59,4 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 verd = 0 # Gerum ráð fyrir að það sé uppselt (0 kr) fyrst
                 
                 # Ef við fáum svar og herbergi er laust þennan daginn, skráum við verðið
-                if "result
+                if "result" in data_list and len(data_list["result"]) > 0:
