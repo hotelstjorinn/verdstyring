@@ -55,14 +55,13 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 res_list = requests.get(url_list, headers=headers, params=qs_list)
                 data_list = res_list.json()
                 
-                verd = 0 # Gerum ráð fyrir að það sé uppselt (0 kr) fyrst
+                verd = 0 
                 
-                # Ef við fáum svar og herbergi er laust þennan daginn, skráum við verðið
                 if "result" in data_list and len(data_list["result"]) > 0:
                     hotel_data = data_list["result"][0]
                     verd = hotel_data.get("min_total_price", 0)
                 
-                herbergi = 50 # Fastur fjöldi til að reikna vegið meðaltal í bili
+                herbergi = 50 
                 
                 gogn.append({
                     "Dagsetning": checkin_dagur, 
@@ -83,7 +82,6 @@ def main():
     if 'valin_hotel' not in st.session_state:
         st.session_state['valin_hotel'] = []
 
-    # --- HLIÐARSTIKA (LEIT OG LISTI) ---
     st.sidebar.header("Leit")
     
     nytt_hotel = st.sidebar.text_input("Bæta við gististað (ýttu á Enter)")
@@ -100,7 +98,6 @@ def main():
             st.session_state['valin_hotel'] = []
             st.rerun()
 
-    # --- TAKKAR FYRIR DAGA ---
     col1, col2, col3 = st.columns(3)
     with col1:
         btn_1 = st.button("Sækja verð markaðar núna")
@@ -124,4 +121,7 @@ def main():
                 df['Staða'] = np.where(df['Verð (ISK)'] > 0, 'Laust', 'Uppselt')
                 df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)'], errors='coerce').fillna(0).astype(int)
                 df['Verð sýnt'] = df['Verð (ISK)'].apply(lambda x: f"{x:,}".replace(",", ".") if x > 0 else "")
-                df['Dagsetning_str'] = pd.to_datetime(
+                df['Dagsetning_str'] = pd.to_datetime(df['Dagsetning']).dt.strftime("%d.%m")
+                df.index = np.arange(1, len(df) + 1)
+
+                st.subheader(f"Verðyfirlit
