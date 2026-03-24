@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import datetime
 import requests
+import io  # NÝTT: Til að búa til Excel skjal í minninu
 
 # ÞETTA VERÐUR AÐ VERA FYRSTA LÍNAN
 st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
@@ -238,21 +239,33 @@ def main():
                     st.plotly_chart(fig, use_container_width=True)
                     
                     # ==========================================
-                    # NÝTT: NIÐURHALSTAKKI FYRIR EXCEL/CSV
+                    # NÝTT: ALVÖRU EXCEL NIÐURHAL MEÐ FLIPUM
                     # ==========================================
                     st.markdown("---")
                     st.subheader("📥 Sækja skýrslu")
                     
-                    # Búum til CSV skrá úr aðalgögnunum (df). utf-8-sig tryggir að Excel lesi íslenska stafi rétt.
-                    csv_gogn = df[['Dagsetning_obj', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
-                    csv_gogn.rename(columns={'Dagsetning_obj': 'Dagsetning (Kóði)'}, inplace=True)
-                    csv_data = csv_gogn.to_csv(index=False).encode('utf-8-sig')
+                    # Búum til Excel skjal í minninu
+                    output = io.BytesIO()
+                    
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        # FLIPI 1: Öll gögnin
+                        gogn_ut = df[['Dagsetning_obj', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
+                        gogn_ut.rename(columns={'Dagsetning_obj': 'Dagsetning (Kóði)'}, inplace=True)
+                        gogn_ut.to_excel(writer, sheet_name='Öll gögn', index=False)
+                        
+                        # FLIPI 2: Meðalverð (Hreinar tölur, tilbúið fyrir línurit í Excel)
+                        # Við notum upprunalegu töludálkana 'Venjulegt' og 'Vegið' svo hægt sé að gera línurit
+                        medaltal_ut = df_saman[['Dagsetning', 'Venjulegt', 'Vegið']].copy()
+                        medaltal_ut.rename(columns={'Venjulegt': 'Venjulegt meðalverð', 'Vegið': 'Vegið meðalverð'}, inplace=True)
+                        medaltal_ut.to_excel(writer, sheet_name='Meðalverð Markaðar', index=False)
+                    
+                    excel_data = output.getvalue()
                     
                     st.download_button(
-                        label=f"Sækja öll gögn ({dagar_valdir} dagar) sem CSV skjal",
-                        data=csv_data,
-                        file_name=f"markadsverd_{dagar_valdir}dagar_{datetime.date.today()}.csv",
-                        mime="text/csv"
+                        label=f"Sækja Excel skýrslu ({dagar_valdir} dagar)",
+                        data=excel_data,
+                        file_name=f"markadsverd_{dagar_valdir}dagar_{datetime.date.today()}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                     
                 else:
