@@ -79,17 +79,18 @@ if st.session_state.min_hotel:
                     checkin_date = datetime.now() + timedelta(days=dagur)
                     checkout_date = checkin_date + timedelta(days=1)
                     
-                    url = f"https://{API_HOST}/properties/list"
+                    # RÉTT SLÓÐ FYRIR EITT HÓTEL ER YFIRLEITT ÞESSI:
+                    url = f"https://{API_HOST}/properties/detail"
                     
-                    # BREYTINGIN ER HÉR UNDIR ("search_type": "hotel")
+                    # Við setjum inn öll möguleg nöfn á dagsetningum sem þetta API gæti viljað
                     querystring = {
-                        "dest_id": h_id,
-                        "search_type": "hotel", 
+                        "hotel_id": h_id,
                         "arrival_date": checkin_date.strftime("%Y-%m-%d"),
                         "departure_date": checkout_date.strftime("%Y-%m-%d"),
-                        "room_qty": "1",
-                        "guest_qty": "2",
-                        "currencycode": "ISK"
+                        "checkin_date": checkin_date.strftime("%Y-%m-%d"),
+                        "checkout_date": checkout_date.strftime("%Y-%m-%d"),
+                        "currencycode": "ISK",
+                        "currency": "ISK"
                     }
                     headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": API_HOST}
                     
@@ -98,23 +99,26 @@ if st.session_state.min_hotel:
                         res_data = response.json()
                         
                         price = 0
-                        try:
-                            results = res_data.get('result', [])
-                            if results and len(results) > 0:
-                                hotel_data = results[0]
-                                price = hotel_data.get('min_total_price', 0)
+                        # Við reynum að finna verðið sama hvað það heitir í svarinu
+                        str_data = str(res_data)
+                        if 'price' in str_data.lower() or 'amount' in str_data.lower():
+                            try:
+                                # Algengur staður fyrir verð í 'properties/detail'
+                                price = res_data.get('data', {}).get('composite_price_breakdown', {}).get('gross_amount', {}).get('value', 0)
                                 if price == 0:
-                                    price = hotel_data.get('composite_price_breakdown', {}).get('gross_amount', {}).get('value', 0)
-                        except:
-                            pass
+                                    # Annar algengur staður
+                                    price = res_data.get('price_breakdown', {}).get('gross_price', 0)
+                            except:
+                                pass
                         
                         if price == 0 and debug_data is None:
+                            # Ef við finnum ekkert verð, vistum við svarið til að sýna þér það
                             debug_data = res_data
 
                         all_prices.append({
                             "Dagsetning": checkin_date.strftime("%d.%m"),
                             "Hótel": nafn.split(',')[0], 
-                            "Verð": price
+                            "Verð": float(price)
                         })
                     except Exception as e:
                         all_prices.append({"Dagsetning": checkin_date.strftime("%d.%m"), "Hótel": nafn.split(',')[0], "Verð": 0})
@@ -140,7 +144,7 @@ if st.session_state.min_hotel:
             st.metric("Meðalverð markaðar", f"{meðaltal:,.0f} ISK")
         else:
             st.error("⚠️ Appið fær ennþá 0 kr. frá Booking API-inu.")
-            st.write("Skjáskotið þitt síðast leysti málið! En ef það kemur NÝ villa núna, sendu mér hana:")
+            st.write("Villan frá áðan er farin! Booking skilaði okkur gögnum, en ég er að leita á röngum stað að verðinu í kóðanum frá þeim. **Sendu mér skjáskot af gula kassanum hér fyrir neðan:**")
             if debug_data:
                 st.json(debug_data)
 
