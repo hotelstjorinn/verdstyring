@@ -20,7 +20,6 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
     
     for hotel in hotel_listi:
         try:
-            # --- SKREF 1: Finna auðkenni (ID) hótelsins ---
             url_loc = "https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete"
             qs_loc = {"text": hotel, "languagecode": "is"}
             
@@ -37,7 +36,6 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
             
             st.info(f"📍 Leita að lausum herbergjum á: **{fundid_nafn}** (ID: {dest_id}, Tegund: {search_type})")
             
-            # --- SKREF 2: Sækja verðið DAG FYRIR DAG ---
             for i in range(fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
                 checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
@@ -54,7 +52,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     "search_type": search_type, 
                     "currency": "ISK",
                     "locale": "en-gb",
-                    "children_qty": "0"  # <--- Bætt aftur inn!
+                    "children_qty": "0" 
                 }
                 
                 res_list = requests.get(url_list, headers=headers, params=qs_list)
@@ -73,15 +71,13 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                         verd = hotel_data.get("min_total_price", 0)
                     
                     if not verd or verd == 0:
-                        with st.expander(f"🔍 Fann hótelið en vantar verð fyrir {checkin_dagur.strftime('%d.%m')} (Smelltu hér)"):
+                        with st.expander(f"🔍 Fann hótelið en vantar verð fyrir {checkin_dagur.strftime('%d.%m')}"):
                             st.write("Gögnin um hótelið litu svona út. Hvar er verðið falið?")
                             st.json(hotel_data)
                         verd = 0
                 else:
-                    # Ný villuleit sem sýnir ALLT svarið!
-                    with st.expander(f"🔍 Sjá ALLT svarið frá Booking fyrir {checkin_dagur.strftime('%d.%m')} (Smelltu hér)"):
+                    with st.expander(f"🔍 Sjá ALLT svarið frá Booking fyrir {checkin_dagur.strftime('%d.%m')}"):
                         st.write("Booking API svaraði með tómum lista.")
-                        st.write("Líkleg ástæða: Lágmarksdvöl, 'public' verð uppselt (aðeins Genius herbergi eftir), eða kerfis-töf.")
                         st.write("Hér er allt JSON svarið. Gefðu mér skjáskot af þessu:")
                         st.json(data_list)
                 
@@ -95,58 +91,4 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 })
                     
         except Exception as e:
-            st.error(f"Villa við að tengjast API fyrir {hotel}: {e}")
-            
-    return pd.DataFrame(gogn)
-# ==========================================
-
-def main():
-    st.title("🏨 Hótelstjórinn markaðsverð")
-
-    if 'valin_hotel' not in st.session_state:
-        st.session_state['valin_hotel'] = []
-
-    st.sidebar.header("Leit")
-    
-    nytt_hotel = st.sidebar.text_input("Bæta við gististað (ýttu á Enter)")
-    
-    if nytt_hotel and nytt_hotel not in st.session_state['valin_hotel']:
-        st.session_state['valin_hotel'].append(nytt_hotel)
-
-    if len(st.session_state['valin_hotel']) > 0:
-        st.sidebar.markdown("### Valdir gististaðir:")
-        for i, hotel in enumerate(st.session_state['valin_hotel']):
-            st.sidebar.markdown(f"- **{hotel}**")
-            
-        if st.sidebar.button("Hreinsa allan lista"):
-            st.session_state['valin_hotel'] = []
-            st.rerun()
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        btn_1 = st.button("Sækja verð markaðar núna")
-    with col2:
-        btn_7 = st.button("Sækja verð markaðar næstu 7 daga")
-    with col3:
-        btn_30 = st.button("Sækja verð markaðar næstu 30 daga")
-
-    dagar_valdir = 0
-    if btn_1: dagar_valdir = 1
-    elif btn_7: dagar_valdir = 7
-    elif btn_30: dagar_valdir = 30
-
-    if dagar_valdir > 0:
-        if len(st.session_state['valin_hotel']) > 0:
-            st.success(f"Sæki raungögn af Booking fyrir **{len(st.session_state['valin_hotel'])}** gististaði í **{dagar_valdir}** daga. Bíddu andartak...")
-            
-            df = saekja_raungogn(st.session_state['valin_hotel'], dagar_valdir) 
-
-            if not df.empty:
-                df['Staða'] = np.where(df['Verð (ISK)'] > 0, 'Laust', 'Uppselt')
-                df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)'], errors='coerce').fillna(0).astype(int)
-                df['Verð sýnt'] = df['Verð (ISK)'].apply(lambda x: f"{x:,}".replace(",", ".") if x > 0 else "")
-                df['Dagsetning_str'] = pd.to_datetime(df['Dagsetning']).dt.strftime("%d.%m")
-                df.index = np.arange(1, len(df) + 1)
-
-                st.subheader(f"Verðyfirlit ({dagar_valdir} dagar)")
-                st.dataframe(df[['Dagsetning
+            st.error
