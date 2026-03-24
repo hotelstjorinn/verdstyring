@@ -137,7 +137,6 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
 def main():
     st.title("🏨 Hótelstjórinn markaðsverð")
 
-    # ÖRYGGISPLÁSTURINN
     if 'valin_hotel' not in st.session_state or isinstance(st.session_state['valin_hotel'], list):
         st.session_state['valin_hotel'] = {}
 
@@ -212,26 +211,28 @@ def main():
                     df_saman['Venjulegt'] = df_saman['Venjulegt'].round(0).astype(int)
                     df_saman['Vegið'] = df_saman['Vegið'].round(0).astype(int)
 
-                    df_saman['Venjulegt (sýnt)'] = df_saman['Venjulegt'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
-                    df_saman['Vegið (sýnt)'] = df_saman['Vegið'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
+                    # HÉR ER BREYTINGIN FYRIR TÖFLUNA
+                    df_saman['Meðalverð'] = df_saman['Venjulegt'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
+                    df_saman['Vegið meðalverð'] = df_saman['Vegið'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
                     
                     df_saman.index = np.arange(1, len(df_saman) + 1)
                     
-                    syndir_dalkar_saman = ['Dagsetning', 'Venjulegt (sýnt)', 'Vegið (sýnt)']
+                    syndir_dalkar_saman = ['Dagsetning', 'Meðalverð', 'Vegið meðalverð']
                     st.dataframe(df_saman[syndir_dalkar_saman], use_container_width=True)
 
                     st.subheader("Verðþróun")
                     fig = px.bar(df, x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group')
                     
+                    # HÉR ER BREYTINGIN FYRIR LÍNURITIÐ
                     fig.add_scatter(
                         x=df_saman['Dagsetning'], y=df_saman['Venjulegt'], 
-                        mode='lines+markers', name='Venjulegt meðaltal', 
+                        mode='lines+markers', name='Meðalverð', 
                         line=dict(color='black', dash='dash', width=2)
                     )
                     
                     fig.add_scatter(
                         x=df_saman['Dagsetning'], y=df_saman['Vegið'], 
-                        mode='lines+markers', name='Vegið meðaltal', 
+                        mode='lines+markers', name='Vegið meðalverð', 
                         line=dict(color='red', width=3)
                     )
                     
