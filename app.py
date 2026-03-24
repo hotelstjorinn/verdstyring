@@ -57,4 +57,4 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
                 continue
                 
             dest_id = data_loc[0].get("dest_id")
-            search_type = data_loc[0].get("
+            search_type = data_loc[0].get("dest_type", "city")
