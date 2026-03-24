@@ -20,7 +20,6 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
     
     for hotel in hotel_listi:
         try:
-            # --- SKREF 1: Finna auðkenni (ID) hótelsins ---
             url_loc = "https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete"
             qs_loc = {"text": hotel, "languagecode": "is"}
             
@@ -37,14 +36,12 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
             
             st.info(f"📍 Leita að lausum herbergjum á: **{fundid_nafn}** (ID: {dest_id}, Tegund: {search_type})")
             
-            # --- SKREF 2: Sækja verðið DAG FYRIR DAG ---
             for i in range(fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
                 checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
                  
                 url_list = "https://apidojo-booking-v1.p.rapidapi.com/properties/list"
                 
-                # HÉR ER LAUSNIN: Berskjölduð og hrein leit, engar auka síur!
                 qs_list = {
                     "offset": "0",
                     "arrival_date": checkin_dagur.strftime("%Y-%m-%d"),
@@ -64,18 +61,24 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 
                 if "result" in data_list and len(data_list["result"]) > 0:
                     hotel_data = data_list["result"][0]
-                    if "min_total_price" in hotel_data:
-                        verd = hotel_data.get("min_total_price", 0)
-                    elif "price_breakdown" in hotel_data:
-                        verd = hotel_data["price_breakdown"].get("gross_price", 0)
-                    elif "composite_price_breakdown" in hotel_data:
+                    
+                    # Ný og bætt leit að verðmiðanum! 
+                    if "composite_price_breakdown" in hotel_data and "gross_amount" in hotel_data["composite_price_breakdown"]:
                         verd = hotel_data["composite_price_breakdown"]["gross_amount"].get("value", 0)
+                    elif "priceBreakdown" in hotel_data and "grossPrice" in hotel_data["priceBreakdown"]:
+                        verd = hotel_data["priceBreakdown"]["grossPrice"].get("value", 0)
+                    elif "min_total_price" in hotel_data:
+                        verd = hotel_data.get("min_total_price", 0)
+                    
+                    # EF HANN FINNUR EKKI VERÐIÐ ÞRÁTT FYRIR AÐ FINNA HÓTELIÐ:
+                    if not verd or verd == 0:
+                        with st.expander(f"🔍 Fann hótelið en vantar verð fyrir {checkin_dagur.strftime('%d.%m')} (Smelltu hér)"):
+                            st.write("Gögnin um hótelið litu svona út. Hvar er verðið falið?")
+                            st.json(hotel_data)
+                        verd = 0
                 else:
-                    # Ný villuleit sem sýnir nákvæmlega hvaða spurningu við sendum á Booking!
-                    with st.expander(f"Villuleit fyrir {checkin_dagur.strftime('%d.%m')} (Smelltu hér)"):
-                        st.write("Spurningin okkar til Booking:")
-                        st.json(qs_list)
-                        st.write("Svarið frá Booking:")
+                    with st.expander(f"Sjá afhverju {hotel} er raunverulega uppselt þann {checkin_dagur.strftime('%d.%m')}"):
+                        st.write("Svarið frá Booking (Tómt = Uppselt eða lágmarksdvöl):")
                         st.json(data_list)
                 
                 herbergi = 50 
