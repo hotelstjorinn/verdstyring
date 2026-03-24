@@ -53,4 +53,8 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
             data_loc = res_loc.json()
             
             if not data_loc or len(data_loc) == 0:
-                st.warning(f"Booking fann ekki gistista
+                st.warning(f"Booking fann ekki gististaðinn: '{hotel}'")
+                continue
+                
+            dest_id = data_loc[0].get("dest_id")
+            search_type = data_loc[0].get("
