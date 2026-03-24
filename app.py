@@ -8,50 +8,57 @@ import requests
 st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
 
 # ==========================================
-# RAUNGÖGN - Sækir upplýsingar af netinu í gegnum API
 def saekja_raungogn(hotel_listi, fjoldi_daga):
+    # API lykillinn þinn fyrir Apidojo
+    API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6"
     
-    # ⚠️ HÉR ÞARFTU AÐ SETJA ÞINN EIGIN API LYKIL FRÁ RAPIDAPI ⚠️
-    API_KEY = "ÞINN_API_LYKILL_KEMUR_HÉR"
-    
-    # Stoppar forritið og lætur þig vita ef þú hefur gleymt að setja lykilinn inn
-    if API_KEY == "ÞINN_API_LYKILL_KEMUR_HÉR":
-        st.error("⚠️ Þú verður að setja inn raunverulegan API lykil í kóðann (línu 15) til að sækja gögn af netinu!")
-        return pd.DataFrame()
-
     idag = datetime.date.today()
     lokadagur = idag + datetime.timedelta(days=fjoldi_daga)
     gogn = []
     
+    headers = {
+        "X-RapidAPI-Key": API_KEY,
+        "X-RapidAPI-Host": "apidojo-booking-v1.p.rapidapi.com"
+    }
+    
     for hotel in hotel_listi:
-        # Þetta er dæmi um slóð á vinsælt Booking API á RapidAPI
-        url = "https://booking-com.p.rapidapi.com/v1/hotels/search"
-        
-        querystring = {
-            "query": hotel,
-            "checkout_date": lokadagur.strftime("%Y-%m-%d"),
-            "checkin_date": idag.strftime("%Y-%m-%d"),
-            "units": "metric",
-            "currency": "ISK" # Viljum verðið í krónum
-        }
-        
-        headers = {
-            "X-RapidAPI-Key": API_KEY,
-            "X-RapidAPI-Host": "booking-com.p.rapidapi.com"
-        }
-        
         try:
-            # Sækjum gögnin!
-            response = requests.get(url, headers=headers, params=querystring)
-            gogn_fra_api = response.json()
+            # --- SKREF 1: Finna auðkenni (ID) hótelsins ---
+            url_loc = "https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete"
+            qs_loc = {"text": hotel, "languagecode": "is"}
             
-            # Reynum að lesa verðið út úr svarinu (þetta gæti þurft að fínstilla eftir API)
-            if 'result' in gogn_fra_api and len(gogn_fra_api['result']) > 0:
-                fyrsta_nidurstada = gogn_fra_api['result'][0]
-                verd = fyrsta_nidurstada.get('min_total_price', 0)
-                herbergi = 50 # Setjum fasta tölu fyrst um sinn ef API skilar ekki herbergjafjölda
+            res_loc = requests.get(url_loc, headers=headers, params=qs_loc)
+            data_loc = res_loc.json()
+            
+            if not data_loc or len(data_loc) == 0:
+                st.warning(f"Booking fann ekki gististaðinn: '{hotel}'")
+                continue
                 
-                # Setjum verðið inn á dagana
+            dest_id = data_loc[0].get("dest_id")
+            search_type = data_loc[0].get("search_type")
+            
+            # --- SKREF 2: Sækja verðið fyrir þetta ID ---
+            url_list = "https://apidojo-booking-v1.p.rapidapi.com/properties/list"
+            qs_list = {
+                "offset": "0",
+                "arrival_date": idag.strftime("%Y-%m-%d"),
+                "departure_date": lokadagur.strftime("%Y-%m-%d"),
+                "guest_qty": "2", 
+                "room_qty": "1",  
+                "dest_ids": dest_id,
+                "search_type": search_type,
+                "price_filter_currencycode": "ISK" 
+            }
+            
+            res_list = requests.get(url_list, headers=headers, params=qs_list)
+            data_list = res_list.json()
+            
+            if "result" in data_list and len(data_list["result"]) > 0:
+                hotel_data = data_list["result"][0]
+                
+                verd = hotel_data.get("min_total_price", 0)
+                herbergi = 50 # Fastur fjöldi til að reikna vegið meðaltal í bili
+                
                 for i in range(fjoldi_daga):
                      dagur = idag + datetime.timedelta(days=i)
                      gogn.append({
@@ -62,9 +69,11 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                      })
             else:
                 st.warning(f"Fann engar verðupplýsingar fyrir {hotel} á þessum dögum.")
-                
+                with st.expander(f"Sjá nákvæm svör frá API (Villuleit fyrir {hotel})"):
+                    st.write(data_list)
+                    
         except Exception as e:
-            st.error(f"Villa við að sækja gögn fyrir {hotel}: {e}")
+            st.error(f"Villa við að tengjast API fyrir {hotel}: {e}")
             
     return pd.DataFrame(gogn)
 # ==========================================
@@ -106,16 +115,13 @@ def main():
     elif btn_7: dagar_valdir = 7
     elif btn_30: dagar_valdir = 30
 
-    # Ef ýtt var á takka...
     if dagar_valdir > 0:
         if len(st.session_state['valin_hotel']) > 0:
-            st.success(f"Sæki raungögn fyrir **{len(st.session_state['valin_hotel'])}** gististaði í **{dagar_valdir}** daga. Bíddu andartak...")
+            st.success(f"Sæki raungögn af Booking fyrir **{len(st.session_state['valin_hotel'])}** gististaði í **{dagar_valdir}** daga. Bíddu andartak...")
             
-            # --- KALLAR Á NÝJA API FALLIÐ! ---
             df = saekja_raungogn(st.session_state['valin_hotel'], dagar_valdir) 
 
             if not df.empty:
-                # Undirbúum aðaltöfluna
                 df['Staða'] = np.where(df['Verð (ISK)'] > 0, 'Laust', 'Uppselt')
                 df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)'], errors='coerce').fillna(0).astype(int)
                 df['Verð sýnt'] = df['Verð (ISK)'].apply(lambda x: f"{x:,}".replace(",", ".") if x > 0 else "")
@@ -125,16 +131,13 @@ def main():
                 st.subheader(f"Verðyfirlit ({dagar_valdir} dagar)")
                 st.dataframe(df[['Dagsetning_str', 'Hótel', 'Fjöldi herbergja', 'Verð sýnt', 'Staða']], use_container_width=True)
 
-                # --- REIKNUM BÆÐI MEÐALTÖLIN ---
                 st.subheader("Meðalverð markaðar (Venjulegt og Vegið)")
                 df_laust = df[df['Verð (ISK)'] > 0].copy()
                 
                 if not df_laust.empty:
-                    # 1. Venjulegt meðaltal
                     df_medaltal = df_laust.groupby('Dagsetning_str')['Verð (ISK)'].mean().reset_index()
                     df_medaltal.rename(columns={'Verð (ISK)': 'Venjulegt meðalverð'}, inplace=True)
 
-                    # 2. Vegið meðaltal
                     df_laust['Verð_Vægi'] = df_laust['Verð (ISK)'] * df_laust['Fjöldi herbergja']
                     df_veg = df_laust.groupby('Dagsetning_str').agg(
                         Summa_Verð_Vægi=('Verð_Vægi', 'sum'),
@@ -142,7 +145,6 @@ def main():
                     ).reset_index()
                     df_veg['Vegið meðalverð'] = df_veg['Summa_Verð_Vægi'] / df_veg['Summa_Herbergi']
 
-                    # Sameinum
                     df_saman = pd.merge(df_medaltal, df_veg[['Dagsetning_str', 'Vegið meðalverð']], on='Dagsetning_str')
                     
                     df_saman['Venjulegt meðalverð'] = df_saman['Venjulegt meðalverð'].round(0).astype(int)
@@ -154,7 +156,6 @@ def main():
                     
                     st.dataframe(df_saman[['Dagsetning_str', 'Venjulegt (sýnt)', 'Vegið (sýnt)']], use_container_width=True)
 
-                    # --- SÚLURIT ---
                     st.subheader("Verðþróun")
                     fig = px.bar(df, x='Dagsetning_str', y='Verð (ISK)', color='Hótel', barmode='group')
                     
@@ -173,5 +174,6 @@ def main():
         else:
             st.error("Þú þarft að bæta við að minnsta kosti einum gististað vinstra megin áður en þú leitar!")
 
+# ÞESSAR TVÆR LÍNUR ERU MIKILVÆGASTAR FYRIR AÐ FORRITIÐ KVEIKI Á SÉR
 if __name__ == "__main__":
     main()
