@@ -251,7 +251,7 @@ def main():
                         gogn_ut = df[['Dagsetning_obj', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
                         gogn_ut.rename(columns={'Dagsetning_obj': 'Dagsetning'}, inplace=True)
                         # Breytum í dagsetningar-format fyrir Excel
-                        gogn_ut['Dagsetning'] = gogn_ut['Dagsetning'].dt.date 
+                        gogn_ut['Dagsetning'] = pd.to_datetime(gogn_ut['Dagsetning']).dt.date
                         gogn_ut.to_excel(writer, sheet_name='Öll gögn', index=False)
                         
                         # FLIPI 2: Meðalverð og SÚLURIT
