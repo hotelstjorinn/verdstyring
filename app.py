@@ -1,60 +1,68 @@
 import streamlit as st
+import requests
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Verðstýring 30 Dagar", layout="wide")
+st.set_page_config(page_title="Mín Verðstýring", layout="wide")
 
-st.title("📈 30-Daga Verðstýring og Spá")
+# 1. Öryggisathugun á lyklum
+try:
+    API_KEY = st.secrets["api_key"]
+    API_HOST = st.secrets["api_host"]
+except:
+    st.error("⚠️ API lykill vantar! Farðu í Settings -> Secrets í Streamlit og settu hann inn.")
+    st.stop()
 
-# --- 1. STJÓRNANDI (SIDEBAR) ---
-st.sidebar.header("Stillingar")
-mitt_markmid = st.sidebar.slider("Verðstefna (% af meðalverði)", 50, 150, 95)
-st.sidebar.info("95% þýðir að þú vilt vera 5% ódýrari en meðaltalið.")
+st.title("🏨 Mín Verðstýring - Stjórnborð")
 
-# --- 2. GÖGN (SIMULATION - Þar sem scraping á 30 daga tekur tíma) ---
-# Í alvöru appi myndum við keyra loopu sem sækir 30 daga af Booking/Google
-dates = [datetime.now() + timedelta(days=i) for i in range(30)]
-hotel_names = ["Hótel Hamar", "B59 Hotel", "Hotel Egilsen", "Borgarnes HI", "Blómasetrið", "Kyrjala", "Hótel fimm", "Gisti X", "Gisti Y", "Gisti Z"]
+# 2. Búa til geymslu fyrir hótelin þín (svo þau hverfi ekki)
+if 'min_hotel' not in st.session_state:
+    st.session_state.min_hotel = {}
 
-# Búum til sýnidæmi af 30 daga gögnum
-if 'market_data' not in st.session_state:
-    data = []
-    for d in dates:
-        base_price = 25000 + (np.sin(d.day) * 5000) # Smá sveiflur
-        for h in hotel_names:
-            price = base_price + np.random.randint(-3000, 3000)
-            data.append({"Dagsetning": d.date(), "Hótel": h, "Verð": price})
-    st.session_state.market_data = pd.DataFrame(data)
+# 3. LEITARKASSI (Hliðarstika)
+st.sidebar.header("🔍 Leita að gististað")
+leitar_ord = st.sidebar.text_input("Skrifaðu nafn (t.d. B59 eða Hamar):")
 
-df = st.session_state.market_data
+if st.sidebar.button("Leita núna"):
+    # Við notum 'locations/v3/search' til að finna rétta staði
+    search_url = f"https://{API_HOST}/locations/v3/search"
+    params = {"text": leitar_ord, "locale": "is"}
+    headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": API_HOST}
+    
+    try:
+        res = requests.get(search_url, headers=headers, params=params)
+        data = res.json()
+        
+        st.sidebar.write("Niðurstöður:")
+        # Sýnum aðeins gististaði (hotels) úr leitinni
+        for item in data.get('data', []):
+            if item.get('type') == 'hotel':
+                name = item.get('title')
+                h_id = item.get('id')
+                # Búum til takka fyrir hvert hótel
+                if st.sidebar.button(f"➕ Bæta við: {name}", key=h_id):
+                    st.session_state.min_hotel[name] = h_id
+                    st.sidebar.success(f"{name} bætist á listann!")
+    except:
+        st.sidebar.error("Villa við leit. Athugaðu tengingu.")
 
-# --- 3. GREINING ---
-# Reiknum meðaltal fyrir hvern dag
-daily_summary = df.groupby('Dagsetning')['Verð'].mean().reset_index()
-daily_summary.columns = ['Dagsetning', 'Meðalverð Markaðar']
+# 4. BIRTING Á LISTANUM ÞÍNUM
+st.subheader("Gististaðir sem ég fylgist með")
 
-# Reiknum tillögu að verði
-daily_summary['Mælt með (Þitt verð)'] = daily_summary['Meðalverð Markaðar'] * (mitt_markmid / 100)
+if st.session_state.min_hotel:
+    # Búum til töflu yfir það sem þú ert með á listanum
+    h_listi = []
+    for nafn, id_nr in st.session_state.min_hotel.items():
+        h_listi.append({"Nafn": nafn, "Hotel ID": id_nr})
+    
+    st.table(pd.DataFrame(h_listi))
+    
+    # 5. HNAPPUR FYRIR 30 DAGA GREININGU
+    if st.button("📊 Greina 30 daga meðalverð markaðar"):
+        st.info("Hérna mun appið sækja 30 daga verð fyrir alla staðina á listanum þínum...")
+        # (Næsta skref er að virkja verðsöfnunina hér)
+else:
+    st.info("Listinn þinn er tómur. Notaðu leitina vinstra megin til að finna hótel.")
 
-# --- 4. BIRTING ---
-st.subheader("Ráðleggingar fyrir næstu 30 daga")
-
-# Línurit sem sýnir þróunina
-st.line_chart(daily_summary.set_index('Dagsetning'))
-
-# Tafla með nákvæmum tölum
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    st.write("Dagleg sundurliðun")
-    st.dataframe(daily_summary.style.format({
-        'Meðalverð Markaðar': '{:,.0f} kr.',
-        'Mælt með (Þitt verð)': '{:,.0f} kr.'
-    }), use_container_width=True)
-
-with col2:
-    st.write("Hæsta eftirspurn (Top 3 dagar)")
-    top_days = daily_summary.sort_values(by='Meðalverð Markaðar', ascending=False).head(3)
-    for i, row in top_days.iterrows():
-        st.error(f"📅 {row['Dagsetning']}: {row['Meðalverð Markaðar']:,.0f} kr.")
+if st.button("Hreinsa allan listann"):
+    st.session_state.min_hotel = {}
+    st.rerun()
