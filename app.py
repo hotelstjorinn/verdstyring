@@ -42,7 +42,6 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 
                 verd = 0 
                 
-                # Ef þetta er stakt hótel, þá er 'get-rooms' notað!
                 if search_type == "hotel":
                     url_api = "https://apidojo-booking-v1.p.rapidapi.com/properties/v2/get-rooms"
                     qs_api = {
@@ -56,25 +55,22 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     res_api = requests.get(url_api, headers=headers, params=qs_api)
                     data_api = res_api.json()
                     
-                    # NÝTT OG BÆTT VERÐ-VEIÐI KERFI (Byggt á því sem þú sýndir mér!)
                     if isinstance(data_api, list) and len(data_api) > 0:
                         first_item = data_api[0]
-                        # Skoðum tpi_block -> min_price
-                        if "tpi_block" in first_item and len(first_item["tpi_block"]) > 0:
-                            tpi_b = first_item["tpi_block"][0]
-                            if "min_price" in tpi_b and "price" in tpi_b["min_price"]:
-                                verd = tpi_b["min_price"]["price"]
                         
-                        # Ef hitt finnst ekki, reynum við að veiða inni í block listanum
-                        if not verd or verd == 0:
-                            if "block" in first_item and len(first_item["block"]) > 0:
-                                block0 = first_item["block"][0]
-                                if "product_price_breakdown" in block0:
-                                    ppb = block0["product_price_breakdown"]
+                        # NÝJA AÐFERÐIN: Finnum grunnverðið (Gross Amount) úr öllum herbergjum
+                        # Þetta hunsar sérstök farsíma-tilboð og líkir betur eftir borðtölvu!
+                        verd_listi = []
+                        if "block" in first_item and isinstance(first_item["block"], list):
+                            for b in first_item["block"]:
+                                if "product_price_breakdown" in b:
+                                    ppb = b["product_price_breakdown"]
                                     if "gross_amount" in ppb and "value" in ppb["gross_amount"]:
-                                        verd = ppb["gross_amount"]["value"]
+                                        verd_listi.append(ppb["gross_amount"]["value"])
+                        
+                        if verd_listi:
+                            verd = min(verd_listi) # Velur ódýrasta grunnverðið sem er í boði
                 
-                # Ef þetta er ekki stakt hótel (eða ef forritið fer hingað í staðinn)
                 else:
                     url_api = "https://apidojo-booking-v1.p.rapidapi.com/properties/list"
                     qs_api = {
@@ -100,7 +96,6 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                         elif "min_total_price" in hotel_data:
                             verd = hotel_data.get("min_total_price", 0)
 
-                # NÁRUM VIÐ ENNÞÁ EKKI VERÐINU? Birtum þá villugluggann svo við getum séð hvar það lak.
                 if not verd or verd == 0:
                     with st.expander(f"🔍 Fann ekki verð fyrir {checkin_dagur.strftime('%d.%m')} - Smelltu til að sjá Gögn"):
                          st.write("Vélin fékk þessi gögn en gat ekki pikkað verðið út:")
