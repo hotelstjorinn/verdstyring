@@ -20,6 +20,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
     
     for hotel in hotel_listi:
         try:
+            # --- SKREF 1: Finna auðkenni (ID) hótelsins ---
             url_loc = "https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete"
             qs_loc = {"text": hotel, "languagecode": "is"}
             
@@ -36,6 +37,7 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
             
             st.info(f"📍 Leita að lausum herbergjum á: **{fundid_nafn}** (ID: {dest_id}, Tegund: {search_type})")
             
+            # --- SKREF 2: Sækja verðið DAG FYRIR DAG ---
             for i in range(fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
                 checkout_dagur = checkin_dagur + datetime.timedelta(days=1)
@@ -51,7 +53,8 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     "dest_ids": str(dest_id),  
                     "search_type": search_type, 
                     "currency": "ISK",
-                    "locale": "en-gb"
+                    "locale": "en-gb",
+                    "children_qty": "0"  # <--- Bætt aftur inn!
                 }
                 
                 res_list = requests.get(url_list, headers=headers, params=qs_list)
@@ -62,7 +65,6 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                 if "result" in data_list and len(data_list["result"]) > 0:
                     hotel_data = data_list["result"][0]
                     
-                    # Ný og bætt leit að verðmiðanum! 
                     if "composite_price_breakdown" in hotel_data and "gross_amount" in hotel_data["composite_price_breakdown"]:
                         verd = hotel_data["composite_price_breakdown"]["gross_amount"].get("value", 0)
                     elif "priceBreakdown" in hotel_data and "grossPrice" in hotel_data["priceBreakdown"]:
@@ -70,15 +72,17 @@ def saekja_raungogn(hotel_listi, fjoldi_daga):
                     elif "min_total_price" in hotel_data:
                         verd = hotel_data.get("min_total_price", 0)
                     
-                    # EF HANN FINNUR EKKI VERÐIÐ ÞRÁTT FYRIR AÐ FINNA HÓTELIÐ:
                     if not verd or verd == 0:
                         with st.expander(f"🔍 Fann hótelið en vantar verð fyrir {checkin_dagur.strftime('%d.%m')} (Smelltu hér)"):
                             st.write("Gögnin um hótelið litu svona út. Hvar er verðið falið?")
                             st.json(hotel_data)
                         verd = 0
                 else:
-                    with st.expander(f"Sjá afhverju {hotel} er raunverulega uppselt þann {checkin_dagur.strftime('%d.%m')}"):
-                        st.write("Svarið frá Booking (Tómt = Uppselt eða lágmarksdvöl):")
+                    # Ný villuleit sem sýnir ALLT svarið!
+                    with st.expander(f"🔍 Sjá ALLT svarið frá Booking fyrir {checkin_dagur.strftime('%d.%m')} (Smelltu hér)"):
+                        st.write("Booking API svaraði með tómum lista.")
+                        st.write("Líkleg ástæða: Lágmarksdvöl, 'public' verð uppselt (aðeins Genius herbergi eftir), eða kerfis-töf.")
+                        st.write("Hér er allt JSON svarið. Gefðu mér skjáskot af þessu:")
                         st.json(data_list)
                 
                 herbergi = 50 
@@ -145,50 +149,4 @@ def main():
                 df.index = np.arange(1, len(df) + 1)
 
                 st.subheader(f"Verðyfirlit ({dagar_valdir} dagar)")
-                st.dataframe(df[['Dagsetning_str', 'Hótel', 'Fjöldi herbergja', 'Verð sýnt', 'Staða']], use_container_width=True)
-
-                st.subheader("Meðalverð markaðar (Venjulegt og Vegið)")
-                df_laust = df[df['Verð (ISK)'] > 0].copy()
-                
-                if not df_laust.empty:
-                    df_medaltal = df_laust.groupby('Dagsetning_str')['Verð (ISK)'].mean().reset_index()
-                    df_medaltal.rename(columns={'Verð (ISK)': 'Venjulegt meðalverð'}, inplace=True)
-
-                    df_laust['Verð_Vægi'] = df_laust['Verð (ISK)'] * df_laust['Fjöldi herbergja']
-                    df_veg = df_laust.groupby('Dagsetning_str').agg(
-                        Summa_Verð_Vægi=('Verð_Vægi', 'sum'),
-                        Summa_Herbergi=('Fjöldi herbergja', 'sum')
-                    ).reset_index()
-                    df_veg['Vegið meðalverð'] = df_veg['Summa_Verð_Vægi'] / df_veg['Summa_Herbergi']
-
-                    df_saman = pd.merge(df_medaltal, df_veg[['Dagsetning_str', 'Vegið meðalverð']], on='Dagsetning_str')
-                    
-                    df_saman['Venjulegt meðalverð'] = df_saman['Venjulegt meðalverð'].round(0).astype(int)
-                    df_saman['Vegið meðalverð'] = df_saman['Vegið meðalverð'].round(0).astype(int)
-
-                    df_saman['Venjulegt (sýnt)'] = df_saman['Venjulegt meðalverð'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
-                    df_saman['Vegið (sýnt)'] = df_saman['Vegið meðalverð'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
-                    df_saman.index = np.arange(1, len(df_saman) + 1)
-                    
-                    st.dataframe(df_saman[['Dagsetning_str', 'Venjulegt (sýnt)', 'Vegið (sýnt)']], use_container_width=True)
-
-                    st.subheader("Verðþróun")
-                    fig = px.bar(df, x='Dagsetning_str', y='Verð (ISK)', color='Hótel', barmode='group')
-                    
-                    fig.add_scatter(x=df_saman['Dagsetning_str'], y=df_saman['Venjulegt meðalverð'], 
-                                    mode='lines+markers', name='Venjulegt meðaltal', 
-                                    line=dict(color='black', dash='dash', width=2))
-                    
-                    fig.add_scatter(x=df_saman['Dagsetning_str'], y=df_saman['Vegið meðalverð'], 
-                                    mode='lines+markers', name='Vegið meðaltal', 
-                                    line=dict(color='red', width=3))
-                    
-                    fig.update_yaxes(rangemode="tozero")
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("Allt uppselt hjá öllum völdum hótelum á þessu tímabili!")
-        else:
-            st.error("Þú þarft að bæta við að minnsta kosti einum gististað vinstra megin áður en þú leitar!")
-
-if __name__ == "__main__":
-    main()
+                st.dataframe(df[['Dagsetning
