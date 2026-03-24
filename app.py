@@ -64,14 +64,14 @@ if st.session_state.min_hotel:
 
     if dagar_til_ad_saekja > 0:
         if dagar_til_ad_saekja > 1:
-            st.warning(f"Sæki verð fyrir {dagar_til_ad_saekja} daga. Þetta getur tekið smá stund og notar fleiri API flettur.")
+            st.warning(f"Sæki verð fyrir {dagar_til_ad_saekja} daga. Þetta getur tekið smá stund.")
             
         all_prices = []
         progress_bar = st.progress(0)
         total_steps = len(st.session_state.min_hotel) * dagar_til_ad_saekja
         current_step = 0
         
-        debug_data = None # Geymir villugögn til að sýna þér
+        debug_data = None
 
         with st.spinner(f"Sæki gögn fyrir {dagar_til_ad_saekja} daga..."):
             for nafn, h_id in st.session_state.min_hotel.items():
@@ -79,13 +79,16 @@ if st.session_state.min_hotel:
                     checkin_date = datetime.now() + timedelta(days=dagur)
                     checkout_date = checkin_date + timedelta(days=1)
                     
-                    url = f"https://{API_HOST}/properties/get-details"
+                    # RÉTT SLÓÐ FYRIR ÞETTA API ER '/properties/list'
+                    url = f"https://{API_HOST}/properties/list"
                     querystring = {
-                        "hotel_id": h_id,
-                        "checkin_date": checkin_date.strftime("%Y-%m-%d"),
-                        "checkout_date": checkout_date.strftime("%Y-%m-%d"),
-                        "currency": "ISK",
-                        "locale": "is"
+                        "dest_id": h_id,
+                        "dest_type": "hotel",
+                        "arrival_date": checkin_date.strftime("%Y-%m-%d"),
+                        "departure_date": checkout_date.strftime("%Y-%m-%d"),
+                        "room_qty": "1",
+                        "guest_qty": "2",
+                        "currencycode": "ISK"
                     }
                     headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": API_HOST}
                     
@@ -94,18 +97,20 @@ if st.session_state.min_hotel:
                         res_data = response.json()
                         
                         price = 0
-                        # Hér reynum við mismunandi leiðir til að finna verðið í flókna Booking kóðanum
                         try:
-                            # Algengasta leiðin í nýja API-inu
-                            price = res_data.get('data', {}).get('property', {}).get('priceBreakdown', {}).get('grossPrice', {}).get('value', 0)
-                            if price == 0:
-                                # Varakostur ef þetta er "v2" útgáfan
-                                price = res_data['data']['property']['v2_listing_cards'][0]['price_details']['gross_amount']['amount_unformatted']
+                            # Hér finnum við verðið í nýja svarinu frá API-inu
+                            results = res_data.get('result', [])
+                            if results and len(results) > 0:
+                                hotel_data = results[0]
+                                price = hotel_data.get('min_total_price', 0)
+                                if price == 0:
+                                    # Varakostur ef verðið heitir eitthvað annað
+                                    price = hotel_data.get('composite_price_breakdown', {}).get('gross_amount', {}).get('value', 0)
                         except:
                             pass
                         
                         if price == 0 and debug_data is None:
-                            debug_data = res_data # Vistum fyrstu villuna til að skoða
+                            debug_data = res_data
 
                         all_prices.append({
                             "Dagsetning": checkin_date.strftime("%d.%m"),
@@ -121,12 +126,11 @@ if st.session_state.min_hotel:
         # Birta niðurstöður
         df_prices = pd.DataFrame(all_prices)
         
-        st.subheader(f"Verðyfirlit ({dagar_til_ad_saekja} dagar)")
+        st.subheader(f"Verðyfirlit ({dagar_til_ad_saekja} daga)")
         
         df_valid = df_prices[df_prices["Verð"] > 0]
         
         if not df_valid.empty:
-            # Við snúum töflunni við svo dagsetningar séu dálkar ef þetta eru margir dagar
             if dagar_til_ad_saekja > 1:
                 pivot_df = df_valid.pivot(index='Dagsetning', columns='Hótel', values='Verð')
                 st.line_chart(pivot_df)
@@ -137,7 +141,7 @@ if st.session_state.min_hotel:
             st.metric("Meðalverð", f"{meðaltal:,.0f} ISK")
         else:
             st.error("⚠️ Appið fær ennþá 0 kr. frá Booking API-inu.")
-            st.write("Booking sendir gögnin í öðru formi en við bjuggumst við. Hér er hrár kóðinn frá þeim. **Endilega taktu skjáskot af þessum gula kassa hér að neðan og sendu mér**, þá sé ég nákvæmlega hvar verðið er falið og get lagað appið!")
+            st.write("Villan 'Endpoint does not exist' er nú farin, en hér eru nýju gögnin frá Booking. **Sendu mér skjáskot af gula kassanum ef hann birtist!**")
             if debug_data:
                 st.json(debug_data)
 
