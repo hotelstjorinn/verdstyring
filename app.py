@@ -214,7 +214,7 @@ def main():
         df_laust = df[df['Verð (ISK)'] > 0].copy()
 
         # ==========================================
-        # UPPRUNALEGU UPPSETNINGARNAR (Verðyfirlit)
+        # HLUTI 1: YFIRLIT ALLRA 
         # ==========================================
         st.markdown("---")
         st.subheader(f"Verðyfirlit ({st.session_state['dagar_valdir']} dagar)")
@@ -222,8 +222,14 @@ def main():
         syndir_dalkar = ['Dagsetning', 'Hótel', 'Fjöldi herbergja', 'Verð sýnt', 'Staða']
         st.dataframe(df[syndir_dalkar], use_container_width=True)
 
+        st.subheader(f"Verðyfirlit hlið við hlið ({st.session_state['dagar_valdir']} dagar)")
         if not df_laust.empty:
-            # Reiknum meðaltöl fyrir allan markaðinn
+            df_pivot = df_laust.pivot_table(index='Dagsetning', columns='Hótel', values='Verð (ISK)', aggfunc='first')
+            for col in df_pivot.columns:
+                df_pivot[col] = df_pivot[col].apply(lambda x: f"{int(x):,} ISK".replace(",", ".") if pd.notna(x) and x > 0 else "Uppselt")
+            st.dataframe(df_pivot, use_container_width=True)
+
+        if not df_laust.empty:
             df_medaltal = df_laust.groupby('Dagsetning')['Verð (ISK)'].mean().reset_index()
             df_medaltal.rename(columns={'Verð (ISK)': 'Venjulegt'}, inplace=True)
 
@@ -242,11 +248,9 @@ def main():
             df_saman_syna['Meðalverð'] = df_saman_syna['Venjulegt'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
             df_saman_syna['Vegið meðalverð'] = df_saman_syna['Vegið'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
             
-            # UPPRUNALEGUR DÁLKUR: Meðalverð markaðar
             st.subheader("Meðalverð markaðar (Venjulegt vs. Vegið)")
             st.dataframe(df_saman_syna[['Dagsetning', 'Meðalverð', 'Vegið meðalverð']], use_container_width=True)
 
-            # UPPRUNALEGUR DÁLKUR: Verðþróun
             st.subheader("Verðþróun")
             fig1 = px.bar(df, x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group')
             fig1.add_scatter(x=df_saman['Dagsetning'], y=df_saman['Venjulegt'], mode='lines+markers', name='Meðalverð', line=dict(color='black', dash='dash', width=2))
@@ -255,18 +259,7 @@ def main():
             st.plotly_chart(fig1, use_container_width=True)
 
         # ==========================================
-        # HLUTI 2: VERÐFYLKI (MATRIX)
-        # ==========================================
-        st.markdown("---")
-        st.subheader("🗓️ Verðfylki Markaðarins (Hrágögn hlið við hlið)")
-        if not df_laust.empty:
-            df_pivot = df_laust.pivot_table(index='Dagsetning', columns='Hótel', values='Verð (ISK)', aggfunc='first')
-            for col in df_pivot.columns:
-                df_pivot[col] = df_pivot[col].apply(lambda x: f"{int(x):,} ISK".replace(",", ".") if pd.notna(x) and x > 0 else "Uppselt")
-            st.dataframe(df_pivot, use_container_width=True)
-
-        # ==========================================
-        # HLUTI 3: SAMKEPPNISVÍSITALA
+        # HLUTI 2: SAMKEPPNISVÍSITALA
         # ==========================================
         if not df_laust.empty:
             mitt_nafn = st.session_state['mitt_hotel_nafn']
@@ -306,7 +299,6 @@ def main():
             fig2.update_yaxes(rangemode="tozero")
             st.plotly_chart(fig2, use_container_width=True)
             
-            # LJÓSAPERAN (Ábending)
             if not df_skyrsla.empty and df_skyrsla['Verðvísitala (%)'].mean() > 0:
                 gild_gogn = df_skyrsla[df_skyrsla['Verðvísitala (%)'] > 0]
                 medaltal_visitala = gild_gogn['Verðvísitala (%)'].mean()
@@ -329,7 +321,7 @@ def main():
                     st.success(f"💡 **Ábending:** Þú ert á **{medaltal_visitala:.1f}%** vísitölu. Frábært, þú ert algjörlega í takti við keppinautana!")
 
             # ==========================================
-            # HLUTI 4: KPI REIKNIVÉL & VERÐSTEFNA
+            # HLUTI 3: KPI REIKNIVÉL & VERÐSTEFNA
             # ==========================================
             st.markdown("---")
             st.subheader("⚙️ KPI & Tekjustýring (Sláðu inn seld herbergi)")
@@ -366,7 +358,7 @@ def main():
                 if nyt >= 80 and visitala < 100: return "🔴 Hækka verð strax!"
                 if nyt >= 80 and visitala >= 100: return "🟢 Sterk staða - Halda verði"
                 if nyt < 40 and visitala > 105: return "🔵 Lækka verð / Búa til tilboð"
-                if nyt < 40 and visitala <= 100: return "🟡 Ódýr, en engin sala. Búa til pakka."
+                if nyt < 40 and visitala <= 100: return "🟡 Ódýr, en engin sala."
                 return "🟡 Fylgjast með markaði"
 
             kpi_editable['Verðstefna (Aðgerð)'] = kpi_editable.apply(reikna_stefnu, axis=1)
@@ -376,8 +368,23 @@ def main():
             synd_kpi['RevPAR (ISK)'] = synd_kpi['RevPAR (ISK)'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
             st.dataframe(synd_kpi, use_container_width=True, hide_index=True)
 
+            # --- HÉR ER ÚTSKÝRINGIN BÆTT VIÐ ---
+            st.markdown("""
+            **Hvernig hugsar Verðstefnan?**
+            * 🔴 **Hækka verð strax!** (Nýting komin yfir 80% EN þú ert ódýrari en markaðurinn).
+              * *Hugsunin:* Hótelið þitt er að fyllast, sennilega af því að þú ert ódýrastur. Markaðurinn þolir hærra verð, svo þú átt að hækka þitt verð strax á síðustu herbergjunum til að græða meira á þeim (hámarka ADR/RevPAR).
+            * 🟢 **Sterk staða - Halda verði** (Nýting yfir 80% OG þú ert dýrari en markaðurinn).
+              * *Hugsunin:* Þú ert að ná að fylla hótelið þótt þú sért á hærra verði en hinir. Frábært starf! Ekki breyta neinu.
+            * 🔵 **Lækka verð / Búa til tilboð** (Nýting undir 40% OG þú ert dýrari en markaðurinn).
+              * *Hugsunin:* Það er lítið að gera hjá þér og gestirnir eru frekar að bóka hjá keppinautunum af því að þeir eru ódýrari. Þú þarft að lækka verðið (eða setja upp Flash Deal) til að stela bókunum til baka.
+            * 🟡 **Ódýr, en engin sala.** (Nýting undir 40% EN þú ert samt ódýrari en markaðurinn).
+              * *Hugsunin:* Það er dautt yfir öllu. Þótt þú sért ódýrastur er enginn að bóka. Að lækka verðið enn meira mun líklega ekki virka (eftirspurnin er bara ekki til staðar). Betra er að reyna að lokka fólk með aukaverðmætum (t.d. "Frír morgunmatur" eða "Late check-out") frekar en að rústa verðstefnunni þinni.
+            * 🟡 **Fylgjast með markaði** (Allt þar á milli).
+              * *Hugsunin:* Nýting er venjuleg (40-79%). Bókanir eru að rúlla inn á eðlilegum hraða. Bara leyfa þessu að malla og fylgjast með.
+            """)
+
             # ==========================================
-            # HLUTI 5: EXCEL NIÐURHAL MEÐ ÖLLU SAMAN
+            # HLUTI 4: EXCEL NIÐURHAL MEÐ ÖLLU SAMAN
             # ==========================================
             st.markdown("---")
             st.subheader("📥 Sækja Mega Excel Skýrslu")
