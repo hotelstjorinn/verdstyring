@@ -82,7 +82,7 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
             dest_id = data_loc[0].get("dest_id")
             search_type = data_loc[0].get("dest_type", "city") 
             fundid_nafn = data_loc[0].get("name", hotel)
-            st.info(f"📍 **{hotel}** fundið! Booking ID: `{dest_id}`")
+            st.info(f"📍 **{hotel}** fundið! Booking Nafn: *{fundid_nafn}* | Booking ID: `{dest_id}`")
             
             for i in range(fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
@@ -187,7 +187,7 @@ def main():
             save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], {})
             st.rerun()
 
-    # Vistum API gögnin í minnið svo við getum breytt tölum án þess að missa þau!
+    # Vistum API gögnin í minnið svo við getum breytt tölum í KPI án þess að missa þau!
     if 'api_gogn' not in st.session_state:
         st.session_state['api_gogn'] = pd.DataFrame()
         st.session_state['dagar_valdir'] = 0
@@ -197,7 +197,6 @@ def main():
     if col2.button("Sækja verð næstu 7 daga"): st.session_state['dagar_valdir'] = 7
     if col3.button("Sækja verð næstu 30 daga", type="primary"): st.session_state['dagar_valdir'] = 30
 
-    # Ef ýtt var á takka nýlega, sækjum við gögnin og vistum þau
     if st.session_state['dagar_valdir'] > 0 and st.session_state.get('síðast_leitað') != st.session_state['dagar_valdir']:
         if len(st.session_state['keppinautar']) > 0:
             leitargogn = {st.session_state['mitt_hotel_nafn']: st.session_state['mitt_hotel_herb']}
@@ -228,6 +227,9 @@ def main():
             df_kepp = df_laust[df_laust['Hótel'] != mitt_nafn].copy()
             
             if not df_kepp.empty:
+                # HÉR ER LÍNAN SEM VANTAR ÁÐAN! Allt reddað.
+                df_kepp['Verð_Vægi'] = df_kepp['Verð (ISK)'] * df_kepp['Fjöldi herbergja']
+                
                 df_veg_kepp = df_kepp.groupby('Dagsetning').agg(
                     Summa_Verð_Vægi=('Verð_Vægi', 'sum'), Summa_Herbergi=('Fjöldi herbergja', 'sum')
                 ).reset_index()
@@ -246,21 +248,32 @@ def main():
                 ((df_skyrsla['Mitt_Verð'] / df_skyrsla['Keppinautar_Meðalverð']) * 100).round(1), 0
             )
 
+            st.markdown("---")
+            st.subheader("🎯 Samanburður: Þitt Hótel vs. Meðalverð Keppinauta")
+            
+            fig2 = px.line(df_skyrsla, x='Dagsetning', y=['Mitt_Verð', 'Keppinautar_Meðalverð'], 
+                          labels={'value': 'Verð (ISK)', 'variable': 'Viðmið'},
+                          color_discrete_map={'Mitt_Verð': '#1f77b4', 'Keppinautar_Meðalverð': '#d62728'})
+            fig2.update_traces(mode='lines+markers', line=dict(width=3))
+            fig2.data[1].line.dash = 'dash'
+            fig2.data[0].name = "Mitt Hótel"
+            fig2.data[1].name = "Vegið Meðalverð Keppinauta"
+            fig2.update_yaxes(rangemode="tozero")
+            st.plotly_chart(fig2, use_container_width=True)
+
             # ==========================================
-            # NÝTT: KPI REIKNIVÉL & VERÐSTEFNA
+            # KPI REIKNIVÉL & VERÐSTEFNA
             # ==========================================
             st.markdown("---")
             st.subheader("⚙️ KPI & Tekjustýring (Sláðu inn seld herbergi)")
             st.write("Skrifaðu fjölda seldra herbergja í dálkinn hér að neðan til að reikna út Nýtingu, RevPAR og sjá Verðstefnu hvers dags.")
 
-            # Setjum upp grunninn fyrir KPI töfluna
             df_kpi = df_skyrsla[['Dagsetning', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðvísitala (%)']].copy()
             if 'Seld_herb' not in st.session_state:
                 st.session_state['Seld_herb'] = [0] * len(df_kpi)
             
-            df_kpi['Seld herbergi'] = st.session_state['Seld_herb'][:len(df_kpi)] # Pössum að lengdin passi
+            df_kpi['Seld herbergi'] = st.session_state['Seld_herb'][:len(df_kpi)] 
             
-            # Gagnvirk tafla fyrir notandann
             kpi_editable = st.data_editor(
                 df_kpi,
                 column_config={
@@ -275,14 +288,11 @@ def main():
                 use_container_width=True
             )
 
-            # Vistum innsláttinn í minni
             st.session_state['Seld_herb'] = kpi_editable['Seld herbergi'].tolist()
 
-            # Reiknum KPI gildi beint úr innslætti
             kpi_editable['Nýting (%)'] = ((kpi_editable['Seld herbergi'] / st.session_state['mitt_hotel_herb']) * 100).round(1)
             kpi_editable['RevPAR (ISK)'] = (kpi_editable['Mitt_Verð'] * (kpi_editable['Nýting (%)'] / 100)).round(0).astype(int)
 
-            # Rökfræði fyrir Verðstefnu
             def reikna_stefnu(row):
                 nyt = row['Nýting (%)']
                 visitala = row['Verðvísitala (%)']
@@ -295,32 +305,28 @@ def main():
 
             kpi_editable['Verðstefna (Aðgerð)'] = kpi_editable.apply(reikna_stefnu, axis=1)
 
-            # Sýnum endanlegu niðurstöðuna fallega
             st.markdown("#### Útreiknuð Staða & Verðstefna")
             synd_kpi = kpi_editable[['Dagsetning', 'Seld herbergi', 'Nýting (%)', 'RevPAR (ISK)', 'Verðstefna (Aðgerð)']].copy()
             synd_kpi['RevPAR (ISK)'] = synd_kpi['RevPAR (ISK)'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
             st.dataframe(synd_kpi, use_container_width=True, hide_index=True)
 
             # ==========================================
-            # EXCEL NIÐURHAL MEÐ NÝJU KPI SKÝRSLUNNI
+            # EXCEL NIÐURHAL
             # ==========================================
             st.markdown("---")
             st.subheader("📥 Sækja Advanced Excel Skýrslu")
             
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # 1. KPI & Tekjustýring Flipinn
                 kpi_ut = kpi_editable[['Dagsetning', 'Seld herbergi', 'Nýting (%)', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðvísitala (%)', 'RevPAR (ISK)', 'Verðstefna (Aðgerð)']].copy()
                 kpi_ut.rename(columns={'Mitt_Verð': 'ADR (Mitt Verð)'}, inplace=True)
                 kpi_ut.to_excel(writer, sheet_name='Tekjustýring (KPI)', index=False)
 
-                # 2. Verðfylki
                 df_pivot_excel = df_laust.pivot_table(index='Dagsetning_obj', columns='Hótel', values='Verð (ISK)', aggfunc='first')
                 df_pivot_excel.index = pd.to_datetime(df_pivot_excel.index).date
                 df_pivot_excel.index.name = 'Dagsetning'
                 df_pivot_excel.to_excel(writer, sheet_name='Verðfylki (Matrix)')
                 
-                # 3. Hrágögn
                 gogn_ut = df[['Dagsetning_obj', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
                 gogn_ut.rename(columns={'Dagsetning_obj': 'Dagsetning'}, inplace=True)
                 gogn_ut['Dagsetning'] = pd.to_datetime(gogn_ut['Dagsetning']).dt.date 
