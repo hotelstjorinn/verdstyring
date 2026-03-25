@@ -212,14 +212,13 @@ def main():
         df['Verð sýnt'] = df['Verð (ISK)'].apply(lambda x: f"{x:,}".replace(",", ".") if x > 0 else "")
         df['Dagsetning'] = pd.to_datetime(df['Dagsetning_obj']).dt.strftime("%d.%m")
         
-        # BÆTT VIÐ: Vikudagar
         islenskir_dagar = {0: 'Mán', 1: 'Þri', 2: 'Mið', 3: 'Fim', 4: 'Fös', 5: 'Lau', 6: 'Sun'}
         df['Vikudagur'] = pd.to_datetime(df['Dagsetning_obj']).dt.dayofweek.map(islenskir_dagar)
         
         df_laust = df[df['Verð (ISK)'] > 0].copy()
 
         # ==========================================
-        # HLUTI 1: YFIRLIT ALLRA (Með Vikudögum bætt við)
+        # HLUTI 1: YFIRLIT ALLRA 
         # ==========================================
         st.markdown("---")
         st.subheader(f"Verðyfirlit ({st.session_state['dagar_valdir']} dagar)")
@@ -247,7 +246,6 @@ def main():
             df_veg_allir['Vegið'] = df_veg_allir['Summa_Verð_Vægi'] / df_veg_allir['Summa_Herbergi']
 
             df_saman = pd.merge(df_medaltal, df_veg_allir[['Dagsetning', 'Vegið']], on='Dagsetning')
-            # Bætum Vikudegi inn í saman töfluna fyrir línuritin og töflurnar
             df_dag = df[['Dagsetning', 'Vikudagur']].drop_duplicates()
             df_saman = pd.merge(df_dag, df_saman, on='Dagsetning')
             
@@ -291,12 +289,11 @@ def main():
                 df_mitt_einfalt = pd.DataFrame(columns=['Dagsetning', 'Mitt_Verð'])
 
             df_skyrsla = pd.merge(df_veg_kepp[['Dagsetning', 'Keppinautar_Meðalverð']], df_mitt_einfalt, on='Dagsetning', how='outer').fillna(0)
-            df_skyrsla = pd.merge(df_dag, df_skyrsla, on='Dagsetning') # Bætum vikudegi við
+            df_skyrsla = pd.merge(df_dag, df_skyrsla, on='Dagsetning') 
             df_skyrsla['Verðvísitala (%)'] = np.where(
                 (df_skyrsla['Keppinautar_Meðalverð'] > 0) & (df_skyrsla['Mitt_Verð'] > 0),
                 ((df_skyrsla['Mitt_Verð'] / df_skyrsla['Keppinautar_Meðalverð']) * 100).round(1), 0
             )
-            # BÆTT VIÐ INN Í APPIÐ: Mismunur í krónum
             df_skyrsla['Verðmismunur (ISK)'] = df_skyrsla['Mitt_Verð'] - df_skyrsla['Keppinautar_Meðalverð']
 
             st.markdown("---")
@@ -364,7 +361,6 @@ def main():
 
             kpi_editable['Nýting (%)'] = ((kpi_editable['Seld herbergi'] / st.session_state['mitt_hotel_herb']) * 100).round(1)
             kpi_editable['RevPAR (ISK)'] = (kpi_editable['Mitt_Verð'] * (kpi_editable['Nýting (%)'] / 100)).round(0).astype(int)
-            # BÆTT VIÐ: Heildartekjur 
             kpi_editable['Heildartekjur (ISK)'] = (kpi_editable['Seld herbergi'] * kpi_editable['Mitt_Verð']).astype(int)
 
             def reikna_stefnu(row):
@@ -400,7 +396,7 @@ def main():
             """)
 
             # ==========================================
-            # HLUTI 4: EXCEL NIÐURHAL MEÐ LIFANDI FORMÚLUM!
+            # HLUTI 4: EXCEL NIÐURHAL (LIFANDI OG LAGAÐ FYRIR LIBREOFFICE)
             # ==========================================
             st.markdown("---")
             st.subheader("📥 Sækja Mega Excel Skýrslu (LIFANDI!)")
@@ -409,7 +405,6 @@ def main():
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 workbook = writer.book
                 
-                # Búum til grunninn að Tekjustýringu (KPI) - Setjum tóm/núll í formúlu dálkana svo við getum yfirskrifað þá
                 kpi_ut = kpi_editable[['Dagsetning', 'Vikudagur', 'Seld herbergi']].copy()
                 kpi_ut['Nýting (%)'] = ""
                 kpi_ut['ADR (Mitt Verð)'] = kpi_editable['Mitt_Verð']
@@ -423,12 +418,10 @@ def main():
                 kpi_ut.to_excel(writer, sheet_name='Tekjustýring (KPI)', index=False)
                 worksheet_kpi = writer.sheets['Tekjustýring (KPI)']
 
-                # Excel Stílar
                 pct_format = workbook.add_format({'num_format': '0.0%'})
                 currency_format = workbook.add_format({'num_format': '#,##0 "ISK"'})
                 bold_format = workbook.add_format({'bold': True})
                 
-                # Litir fyrir Conditional Formatting
                 format_green = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
                 format_red = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
                 format_yellow = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
@@ -436,38 +429,51 @@ def main():
                 num_rows = len(kpi_ut)
                 mitt_herb = st.session_state['mitt_hotel_herb']
                 
-                # Skrifum Lifandi Formúlur í Excel Skjalið fyrir hverja röð
+                # LAUSN FYRIR LIBREOFFICE: Setjum 'value=' með pre-calculated gildum úr Python
                 for i in range(num_rows):
-                    row = i + 2 # Í Excel er röð 1 header, svo gögn byrja í röð 2
+                    row = i + 2 
+                    seld = kpi_editable.iloc[i]['Seld herbergi']
+                    adr = kpi_editable.iloc[i]['Mitt_Verð']
+                    markad = kpi_editable.iloc[i]['Keppinautar_Meðalverð']
                     
-                    # Dálkur D: Nýting = Seld(C) / Total
-                    worksheet_kpi.write_formula(f'D{row}', f'=C{row}/{mitt_herb}', pct_format)
-                    # Dálkur G: Mismunur = MittVerð(E) - Keppinautar(F)
-                    worksheet_kpi.write_formula(f'G{row}', f'=E{row}-F{row}', currency_format)
-                    # Dálkur H: Vísitala = MittVerð(E) / Keppinautar(F)
-                    worksheet_kpi.write_formula(f'H{row}', f'=IF(F{row}>0, E{row}/F{row}, 0)', pct_format)
-                    # Dálkur I: RevPAR = ADR(E) * Nýting(D)
-                    worksheet_kpi.write_formula(f'I{row}', f'=E{row}*D{row}', currency_format)
-                    # Dálkur J: Heildartekjur = Seld(C) * ADR(E)
-                    worksheet_kpi.write_formula(f'J{row}', f'=C{row}*E{row}', currency_format)
-                    
-                    # Dálkur K: Verðstefna Formúlan stóra!
-                    stefna_formula = f'=IF(D{row}=0, "❔ Vantar gögn", IF(AND(D{row}>=0.8, H{row}<1), "🔴 Hækka verð strax!", IF(AND(D{row}>=0.8, H{row}>=1), "🟢 Sterk staða - Halda verði", IF(AND(D{row}<0.4, H{row}>1.05), "🔵 Lækka verð / Búa til tilboð", IF(AND(D{row}<0.4, H{row}<=1), "🟡 Ódýr, en engin sala.", "🟡 Fylgjast með markaði")))))'
-                    worksheet_kpi.write_formula(f'K{row}', stefna_formula)
+                    n_val = seld / mitt_herb if mitt_herb > 0 else 0
+                    m_val = adr - markad
+                    v_val = adr / markad if markad > 0 else 0
+                    r_val = adr * n_val
+                    t_val = seld * adr
+                    s_val = kpi_editable.iloc[i]['Verðstefna (Aðgerð)']
 
-                # Bætum við Total/Samtals röð í botninn
+                    worksheet_kpi.write_formula(f'D{row}', f'=C{row}/{mitt_herb}', pct_format, value=n_val)
+                    worksheet_kpi.write_formula(f'G{row}', f'=E{row}-F{row}', currency_format, value=m_val)
+                    worksheet_kpi.write_formula(f'H{row}', f'=IF(F{row}>0, E{row}/F{row}, 0)', pct_format, value=v_val)
+                    worksheet_kpi.write_formula(f'I{row}', f'=E{row}*D{row}', currency_format, value=r_val)
+                    worksheet_kpi.write_formula(f'J{row}', f'=C{row}*E{row}', currency_format, value=t_val)
+                    
+                    stefna_formula = f'=IF(D{row}=0, "❔ Vantar gögn", IF(AND(D{row}>=0.8, H{row}<1), "🔴 Hækka verð strax!", IF(AND(D{row}>=0.8, H{row}>=1), "🟢 Sterk staða - Halda verði", IF(AND(D{row}<0.4, H{row}>1.05), "🔵 Lækka verð / Búa til tilboð", IF(AND(D{row}<0.4, H{row}<=1), "🟡 Ódýr, en engin sala.", "🟡 Fylgjast með markaði")))))'
+                    worksheet_kpi.write_formula(f'K{row}', stefna_formula, value=s_val)
+
                 tot_row = num_rows + 2
                 worksheet_kpi.write(f'B{tot_row}', 'SAMTALS / MEÐALTAL', bold_format)
-                worksheet_kpi.write_formula(f'C{tot_row}', f'=SUM(C2:C{tot_row-1})')
-                worksheet_kpi.write_formula(f'D{tot_row}', f'=AVERAGE(D2:D{tot_row-1})', pct_format)
-                worksheet_kpi.write_formula(f'E{tot_row}', f'=AVERAGE(E2:E{tot_row-1})', currency_format)
-                worksheet_kpi.write_formula(f'F{tot_row}', f'=AVERAGE(F2:F{tot_row-1})', currency_format)
-                worksheet_kpi.write_formula(f'G{tot_row}', f'=AVERAGE(G2:G{tot_row-1})', currency_format)
-                worksheet_kpi.write_formula(f'H{tot_row}', f'=AVERAGE(H2:H{tot_row-1})', pct_format)
-                worksheet_kpi.write_formula(f'I{tot_row}', f'=AVERAGE(I2:I{tot_row-1})', currency_format)
-                worksheet_kpi.write_formula(f'J{tot_row}', f'=SUM(J2:J{tot_row-1})', currency_format)
+                
+                # Pre-calculate totals for LibreOffice
+                sum_c = kpi_editable['Seld herbergi'].sum()
+                avg_d = kpi_editable['Nýting (%)'].mean() / 100
+                avg_e = kpi_editable['Mitt_Verð'].mean()
+                avg_f = kpi_editable['Keppinautar_Meðalverð'].mean()
+                avg_g = kpi_editable['Verðmismunur (ISK)'].mean()
+                avg_h = (avg_e / avg_f) if avg_f > 0 else 0
+                avg_i = kpi_editable['RevPAR (ISK)'].mean()
+                sum_j = kpi_editable['Heildartekjur (ISK)'].sum()
 
-                # Setjum inn Conditional Formatting á Verðstefnu dálkinn
+                worksheet_kpi.write_formula(f'C{tot_row}', f'=SUM(C2:C{tot_row-1})', value=sum_c)
+                worksheet_kpi.write_formula(f'D{tot_row}', f'=AVERAGE(D2:D{tot_row-1})', pct_format, value=avg_d)
+                worksheet_kpi.write_formula(f'E{tot_row}', f'=AVERAGE(E2:E{tot_row-1})', currency_format, value=avg_e)
+                worksheet_kpi.write_formula(f'F{tot_row}', f'=AVERAGE(F2:F{tot_row-1})', currency_format, value=avg_f)
+                worksheet_kpi.write_formula(f'G{tot_row}', f'=AVERAGE(G2:G{tot_row-1})', currency_format, value=avg_g)
+                worksheet_kpi.write_formula(f'H{tot_row}', f'=AVERAGE(H2:H{tot_row-1})', pct_format, value=avg_h)
+                worksheet_kpi.write_formula(f'I{tot_row}', f'=AVERAGE(I2:I{tot_row-1})', currency_format, value=avg_i)
+                worksheet_kpi.write_formula(f'J{tot_row}', f'=SUM(J2:J{tot_row-1})', currency_format, value=sum_j)
+
                 worksheet_kpi.conditional_format(f'K2:K{num_rows+1}', {'type': 'text', 'criteria': 'containing', 'value': 'Sterk staða', 'format': format_green})
                 worksheet_kpi.conditional_format(f'K2:K{num_rows+1}', {'type': 'text', 'criteria': 'containing', 'value': 'Hækka verð', 'format': format_red})
                 worksheet_kpi.conditional_format(f'K2:K{num_rows+1}', {'type': 'text', 'criteria': 'containing', 'value': 'Lækka verð', 'format': format_yellow})
@@ -477,7 +483,6 @@ def main():
                 worksheet_kpi.set_column('C:J', 15)
                 worksheet_kpi.set_column('K:K', 35)
 
-                # --- AFGANGURINN AF EXCEL SKJALINU ---
                 df_pivot_excel = df_laust.pivot_table(index=['Dagsetning_obj', 'Vikudagur'], columns='Hótel', values='Verð (ISK)', aggfunc='first').reset_index()
                 df_pivot_excel['Dagsetning'] = pd.to_datetime(df_pivot_excel['Dagsetning_obj']).dt.date
                 df_pivot_excel = df_pivot_excel.drop(columns=['Dagsetning_obj']).set_index(['Dagsetning', 'Vikudagur'])
