@@ -3,6 +3,12 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import json
+import numpy as np
+import plotly.express as px
+import datetime
+import requests
+import io
+import os
 
 # --- TENGING VIÐ GAGNAGRUNN ---
 try:
@@ -21,13 +27,6 @@ try:
 except Exception as e:
     st.sidebar.error(f"🔴 Gat ekki tengst gagnagrunni: {e}")
 # ------------------------------
-import numpy as np
-import plotly.express as px
-import datetime
-import requests
-import io
-import json
-import os
 
 st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
 
@@ -254,6 +253,30 @@ def main():
                 if col not in ['Dagsetning', 'Vikudagur']:
                     df_pivot[col] = df_pivot[col].apply(lambda x: f"{int(x):,} ISK".replace(",", ".") if pd.notna(x) and x > 0 else "Uppselt")
             st.dataframe(df_pivot, use_container_width=True, hide_index=True)
+            
+            # --- VISTA Í GAGNAGRUNN HNAPPUR (PACE) ---
+            st.markdown("---")
+            if st.button("💾 Vista þessi verð í gagnagrunn (Pace)", type="primary"):
+                try:
+                    with st.spinner("Vistar í Google Sheets..."):
+                        nuna = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        df_til_ad_vista = df.copy() 
+                        df_til_ad_vista["Sótt klukkan"] = nuna
+                        
+                        # Breyta Dagsetning_obj í streng (svo Google Sheets skilji það)
+                        df_til_ad_vista["Dagsetning_obj"] = df_til_ad_vista["Dagsetning_obj"].astype(str)
+                        
+                        # Tryggjum að dálkarnir fari alltaf í sömu röð
+                        dalkar = ["Sótt klukkan", "Dagsetning_obj", "Dagsetning", "Vikudagur", "Hótel", "Fjöldi herbergja", "Verð (ISK)", "Staða"]
+                        df_til_ad_vista = df_til_ad_vista[dalkar]
+
+                        gogn_til_ad_vista = df_til_ad_vista.values.tolist()
+                        db.append_rows(gogn_til_ad_vista)
+                        st.success("✅ Verðin hafa verið vistuð! Kíktu í Google Sheets skjalið þitt til að sjá nýju færslurnar.")
+                except Exception as e:
+                    st.error(f"🔴 Eitthvað fór úrskeiðis við vistun: {e}")
+            # -----------------------------------------
 
         if not df_laust.empty:
             df_medaltal = df_laust.groupby('Dagsetning')['Verð (ISK)'].mean().reset_index()
@@ -340,8 +363,8 @@ def main():
                     prosent_haekkun = 100 - medaltal_visitala
                     kronu_haekkun = medaltal_kepp - medaltal_mitt
                     st.info(f"💡 **Ábending:** Þú ert að meðaltali á **{medaltal_visitala:.1f}%** af verði keppinauta. "
-                            f"Þú gætir hækkað þig um **{prosent_haekkun:.1f}%** (sem er **{int(kronu_haekkun):,} ISK**.) "
-                            f"til að ná meðalverði markaðarins sem er **{int(medaltal_kepp):,} ISK**.")
+                          f"Þú gætir hækkað þig um **{prosent_haekkun:.1f}%** (sem er **{int(kronu_haekkun):,} ISK**.) "
+                          f"til að ná meðalverði markaðarins sem er **{int(medaltal_kepp):,} ISK**.")
                 elif medaltal_visitala > 105:
                     prosent_laekkun = medaltal_visitala - 100
                     kronu_laekkun = medaltal_mitt - medaltal_kepp
@@ -450,7 +473,6 @@ def main():
                 num_rows = len(kpi_ut)
                 mitt_herb = st.session_state['mitt_hotel_herb']
                 
-                # LAUSN FYRIR LIBREOFFICE: Setjum 'value=' með pre-calculated gildum úr Python
                 for i in range(num_rows):
                     row = i + 2 
                     seld = kpi_editable.iloc[i]['Seld herbergi']
@@ -476,7 +498,6 @@ def main():
                 tot_row = num_rows + 2
                 worksheet_kpi.write(f'B{tot_row}', 'SAMTALS / MEÐALTAL', bold_format)
                 
-                # Pre-calculate totals for LibreOffice
                 sum_c = kpi_editable['Seld herbergi'].sum()
                 avg_d = kpi_editable['Nýting (%)'].mean() / 100
                 avg_e = kpi_editable['Mitt_Verð'].mean()
