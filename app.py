@@ -211,10 +211,15 @@ def main():
             save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['mitt_hotel_flokkur'], st.session_state['keppinautar'])
             st.rerun()
 
-    if len(st.session_state['keppinautar']) > 0:
+   if len(st.session_state['keppinautar']) > 0:
         st.sidebar.markdown("### Valdir keppinautar:")
         for k_hotel, k_info in st.session_state['keppinautar'].items():
-            st.sidebar.markdown(f"- **{k_hotel}** \n  *(Flokkur: {k_info['flokkur']} | {k_info['fjoldi']} herb.)*")
+            # Öryggisnet sem grípur gömul vistuð gögn
+            if isinstance(k_info, dict):
+                st.sidebar.markdown(f"- **{k_hotel}** \n  *(Flokkur: {k_info.get('flokkur', 'Standard')} | {k_info.get('fjoldi', 0)} herb.)*")
+            else:
+                st.sidebar.markdown(f"- **{k_hotel}** \n  *(Gömul gögn - vinsamlegast hreinsaðu keppinauta)*")
+                
         if st.sidebar.button("Hreinsa alla keppinauta"):
             st.session_state['keppinautar'] = {}
             save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['mitt_hotel_flokkur'], {})
