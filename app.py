@@ -45,7 +45,7 @@ def save_settings(mitt_nafn, mitt_herb, mitt_flokkur, keppinautar):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 # ==========================================
-# LYKILORÐSKERFI 
+# LYKILORÐSKERFI (ENDURREIST NÁKVÆMLEGA)
 # ==========================================
 def athuga_lykilord():
     def lykilord_slegid_inn():
@@ -68,7 +68,7 @@ def athuga_lykilord():
         return True
 
 # ==========================================
-# API GAGNASÖFNUN
+# API GAGNASÖFNUN (SJÁLFVIRKIR FLOKKAR)
 # ==========================================
 def saekja_raungogn(hotel_dict, fjoldi_daga):
     API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6" 
@@ -118,11 +118,12 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
 # AÐAL FORRITIÐ
 # ==========================================
 def main():
-    v_stilla = load_settings() or {}
-    if "mitt_hotel_nafn" not in st.session_state: st.session_state["mitt_hotel_nafn"] = v_stilla.get("mitt_hotel_nafn", "")
-    if "mitt_hotel_herb" not in st.session_state: st.session_state["mitt_hotel_herb"] = v_stilla.get("mitt_hotel_herb", 0)
-    if "mitt_hotel_flokkur" not in st.session_state: st.session_state["mitt_hotel_flokkur"] = v_stilla.get("mitt_hotel_flokkur", "Allir")
-    if "keppinautar" not in st.session_state: st.session_state["keppinautar"] = v_stilla.get("keppinautar", {})
+    vistaðar_stillingar = load_settings() or {}
+    
+    if "mitt_hotel_nafn" not in st.session_state: st.session_state["mitt_hotel_nafn"] = vistaðar_stillingar.get("mitt_hotel_nafn", "")
+    if "mitt_hotel_herb" not in st.session_state: st.session_state["mitt_hotel_herb"] = vistaðar_stillingar.get("mitt_hotel_herb", 0)
+    if "mitt_hotel_flokkur" not in st.session_state: st.session_state["mitt_hotel_flokkur"] = vistaðar_stillingar.get("mitt_hotel_flokkur", "Allir")
+    if "keppinautar" not in st.session_state: st.session_state["keppinautar"] = vistaðar_stillingar.get("keppinautar", {})
 
     if st.session_state["mitt_hotel_nafn"] == "":
         st.title("🏨 Velkomin(n) - Skráðu þitt hótel")
@@ -142,7 +143,7 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.header("Bæta við Keppinauti")
     n_k = st.sidebar.text_input("Nafn á keppinauti")
-    k_h = st.sidebar.number_input("Fjöldi herbergja", min_value=1, value=20)
+    k_h = st.sidebar.number_input("Fjöldi herbergja hjá keppinauti", min_value=1, value=20)
     if st.sidebar.button("Bæta við keppinauti"):
         st.session_state['keppinautar'][n_k] = {"fjoldi": k_h}
         save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], "Allir", st.session_state['keppinautar'])
@@ -240,13 +241,6 @@ def main():
         kpi_edit['Aðgerð'] = kpi_edit.apply(stefna, axis=1)
         st.dataframe(kpi_edit[['Dagsetning','Seld herbergi','Nýting (%)','RevPAR','Aðgerð']], use_container_width=True, hide_index=True)
         
-        st.markdown("""
-        **Skýringar á aðgerðum:**
-        * 🔴 **Hækka verð strax!**: Nýting > 80% en þú ert ódýrari en markaðurinn.
-        * 🔵 **Lækka verð**: Nýting < 40% og þú ert yfir 105% af markaðsverði.
-        * 🟡 **Fylgjast með**: Staðan er í jafnvægi.
-        """)
-
         # ==========================================
         # 🚀 RMS ÍTARLEGAR SKÝRSLUR
         # ==========================================
@@ -266,7 +260,6 @@ def main():
         with rms_tabs[1]:
             st.subheader("📈 Demand vs Price (Demand Curve)")
             st.write("Svarar: *Hversu hátt get ég farið án þess að missa bókanir?*")
-            # Fjarlægði trendline til að koma í veg fyrir hrun vegna statsmodels
             st.plotly_chart(px.scatter(kpi_edit, x="Nýting (%)", y="Mitt_V", title="Eftirspurnarferill"), use_container_width=True)
             
         with rms_tabs[2]:
@@ -307,7 +300,7 @@ def main():
                 st.warning("AI Ráðleggingar fundnar!")
                 st.dataframe(recs[['Dagsetning', 'Aðgerð']])
             else:
-                st.success("Verðlagning er í kjörstöðu.")
+                st.success("Verðlagning er í kjörstöðu miðað við AI greiningu.")
 
         # --- EXCEL ---
         st.markdown("---")
@@ -318,4 +311,5 @@ def main():
             df.to_excel(writer, sheet_name='Hrá gögn', index=False)
         st.download_button("📥 Sækja Mega Excel Skýrslu", out.getvalue(), f"Report_{datetime.date.today()}.xlsx")
 
-if athuga_lykilord(): main()
+if athuga_lykilord():
+    main()
