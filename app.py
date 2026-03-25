@@ -191,6 +191,45 @@ def main():
     st.title("📊 Hótelstjórinn - Advanced Revenue System")
 
     st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}**\n- **Flokkur:** {st.session_state['mitt_hotel_flokkur']}\n- **Fjöldi:** {st.session_state['mitt_hotel_herb']} herb.")
+import streamlit as st
+
+# --- 1. UPPSETNING Á MINNI (Kemur í veg fyrir KeyError hrunið) ---
+# Athugum hvort breyturnar séu til, annars búum við þær til með upphafsgildum
+if 'mitt_hotel_nafn' not in st.session_state:
+    st.session_state['mitt_hotel_nafn'] = "Sæki gögn..."
+if 'mitt_hotel_flokkur' not in st.session_state:
+    st.session_state['mitt_hotel_flokkur'] = "Flokka..."
+if 'mitt_hotel_fjoldi' not in st.session_state:
+    st.session_state['mitt_hotel_fjoldi'] = 0
+
+# --- 2. SJÁLFVIRK GAGNASÆKNI OG FLOKKUN ---
+def saekja_og_flokka_herbergi():
+    """
+    Hér sækir kerfið gögnin úr gagnagrunninum þínum og flokkar þau.
+    """
+    # ATH: Hér skrifar þú þinn eigin gagnagrunnskóða (SQL eða álíka)
+    # Dæmi: df = keyra_sql_fyrirspurn("SELECT nafn, flokkur, fjoldi FROM hotel_gogn")
+    
+    # GERVI-GÖGN TIL AÐ SÝNA VIRKNI (Þú skiptir þessu út fyrir þín raunverulegu gögn):
+    sjalfvirkt_nafn = "Hótel Dæmi" 
+    sjalfvirkur_flokkur = "Standard Herbergi" # Hér myndirðu láta kerfið reikna flokkinn
+    sjalfvirkur_fjoldi = 25
+    
+    # Vistum sjálfvirku gögnin í minnið (session_state)
+    st.session_state['mitt_hotel_nafn'] = sjalfvirkt_nafn
+    st.session_state['mitt_hotel_flokkur'] = sjalfvirkur_flokkur
+    st.session_state['mitt_hotel_fjoldi'] = sjalfvirkur_fjoldi
+
+# --- 3. KEYRA SJÁLFVIRKNINA AÐEINS EINU SINNI VIÐ UPPBYRJUN ---
+if 'gogn_eru_tilbuin' not in st.session_state:
+    saekja_og_flokka_herbergi() # Keyrum fallið sem græjar þetta
+    st.session_state['gogn_eru_tilbuin'] = True # Merkjum að þetta sé klárt
+
+# --- 4. HLIÐARSTIKAN ÞÍN (Sama lína og var að hrynja hjá þér áður) ---
+# Nú mun þetta virka snurðulaust!
+st.sidebar.markdown(f"### 🏨 Mitt Hótel: **{st.session_state['mitt_hotel_nafn']}**\n"
+                    f"**Flokkur:** {st.session_state['mitt_hotel_flokkur']}\n"
+                    f"**Fjöldi:** {st.session_state['mitt_hotel_fjoldi']}")
     if st.sidebar.button("Breyta mínu hóteli"):
         st.session_state["mitt_hotel_nafn"] = ""
         st.rerun()
