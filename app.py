@@ -1,466 +1,332 @@
-import { useState } from "react";
-import { base44 } from "@/api/base44Client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, Plus, Download, RefreshCw } from "lucide-react";
-import PriceTable from "../components/PriceTable";
-import KPITable from "../components/KPITable";
-import PricingCalendar from "../components/reports/PricingCalendar";
-import DemandCurve from "../components/reports/DemandCurve";
-import CompetitorPricing from "../components/reports/CompetitorPricing";
-import PriceOccupancyMatrix from "../components/reports/PriceOccupancyMatrix";
-import BookingPace from "../components/reports/BookingPace";
-import RevenueOpportunity from "../components/reports/RevenueOpportunity";
-import DisplacementAnalysis from "../components/reports/DisplacementAnalysis";
-import ChannelPricing from "../components/reports/ChannelPricing";
-import PriceElasticity from "../components/reports/PriceElasticity";
-import AIRecommendations from "../components/reports/AIRecommendations";
-import PriceOverview from "../components/reports/PriceOverview";
+import streamlit as st
+import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
+import json
+import numpy as np
+import plotly.express as px
+import datetime
+import requests
+import io
+import os
 
-const API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6";
-const ISL_DAGAR = { 0: "Mán", 1: "Þri", 2: "Mið", 3: "Fim", 4: "Fös", 5: "Lau", 6: "Sun" };
+# --- TENGING VIÐ GAGNAGRUNN ---
+try:
+    key_dict = json.loads(st.secrets["google_credentials"])
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
+    client = gspread.authorize(creds)
+    db = client.open("Hotel_Pace_DB").sheet1
+    st.sidebar.success("🟢 Tenging við gagnagrunn virk!")
+except Exception as e:
+    st.sidebar.error(f"🔴 Gat ekki tengst gagnagrunni: {e}")
 
-const ROOM_CATEGORIES = [
-  { label: "Suite", keywords: ["suite", "svíta"] },
-  { label: "Junior Suite", keywords: ["junior suite", "junior svíta", "junior"] },
-  { label: "Deluxe", keywords: ["deluxe", "superior", "premium"] },
-  { label: "Standard", keywords: ["standard", "classic", "comfort", "double", "twin", "single"] },
-  { label: "Economy", keywords: ["economy", "budget", "basic", "cosy", "cozy"] },
-];
+st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
 
-function flokkaHerbergi(roomName) {
-  const lower = (roomName || "").toLowerCase();
-  // Panta á þennan máta: suite > junior suite > deluxe > standard > economy
-  if (lower.includes("junior suite") || lower.includes("junior svíta")) return "Junior Suite";
-  if (lower.includes("suite") || lower.includes("svíta")) return "Suite";
-  if (lower.includes("deluxe") || lower.includes("superior") || lower.includes("premium")) return "Deluxe";
-  if (lower.includes("economy") || lower.includes("budget") || lower.includes("basic") || lower.includes("cosy") || lower.includes("cozy")) return "Economy";
-  if (lower.includes("standard") || lower.includes("classic") || lower.includes("comfort") || lower.includes("double") || lower.includes("twin") || lower.includes("single")) return "Standard";
-  return null; // Sleppa ef engin flokkun
-}
+# ==========================================
+# VISTUNAR KERFI
+# ==========================================
+SETTINGS_FILE = "hotel_settings.json"
 
-function formatDate(d) {
-  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-function addDays(d, n) {
-  const r = new Date(d); r.setDate(r.getDate() + n); return r;
-}
-function toISO(d) {
-  return d.toISOString().split("T")[0];
-}
+def load_settings():
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except: return None
+    return None
 
-export default function Dashboard({ settings, onLogout, onResetSetup }) {
-  const [gogn, setGogn] = useState([]);
-  const [seldHerbergi, setSeldHerbergi] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("");
-  const [debugLog, setDebugLog] = useState([]);
-  const [nyKeppinautur, setNyKeppinautur] = useState("");
-  const [nyKeppHerb, setNyKeppHerb] = useState(20);
-  const [localSettings, setLocalSettings] = useState(settings);
-  const [valdir, setValdir] = useState([]);
-
-  const keppinautar = localSettings?.keppinautar || {};
-
-  async function saekjaGogn(fjoldiDaga) {
-    setLoading(true);
-    setGogn([]);
-    setDebugLog([]);
-    const logLines = [];
-    const addLog = (msg) => { logLines.push(msg); setDebugLog([...logLines]); };
-    const headers = {
-      "X-RapidAPI-Key": API_KEY,
-      "X-RapidAPI-Host": "apidojo-booking-v1.p.rapidapi.com"
-    };
-    const idag = new Date();
-    const allHotels = {
-      [localSettings.mitt_hotel_nafn]: { fjoldi: localSettings.mitt_hotel_herb },
-      ...keppinautar
-    };
-    const nidurstodur = [];
-
-    for (const [hotel, upplysingar] of Object.entries(allHotels)) {
-      setStatus(`📡 Sæki gögn fyrir ${hotel}...`);
-      const fjoldi = upplysingar?.fjoldi || 20;
-      try {
-        addLog(`🔍 Leita að: ${hotel}`);
-        const locRes = await fetch(
-          `https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete?text=${encodeURIComponent(hotel)}&languagecode=is`,
-          { headers }
-        );
-        const locData = await locRes.json();
-        addLog(`📍 ${hotel}: ${JSON.stringify(locData?.[0] || 'ekkert')}`);
-        if (!locData?.length) { addLog(`⚠️ Engar leitarniðurstöður fyrir ${hotel}`); continue; }
-        const destId = locData[0]?.dest_id;
-        const searchType = locData[0]?.dest_type;
-        addLog(`🏨 dest_id=${destId}, dest_type=${searchType}`);
-
-        for (let i = 0; i < fjoldiDaga; i++) {
-          const checkin = addDays(idag, i);
-          const checkout = addDays(idag, i + 1);
-
-          if (searchType === "hotel") {
-            const roomsRes = await fetch(
-              `https://apidojo-booking-v1.p.rapidapi.com/properties/v2/get-rooms?hotel_id=${destId}&arrival_date=${toISO(checkin)}&departure_date=${toISO(checkout)}&rec_guest_qty=2&currency_code=ISK`,
-              { headers }
-            );
-            const roomsRaw = await roomsRes.json();
-            addLog(`🛏️ ${hotel} ${formatDate(checkin)}: ${JSON.stringify(roomsRaw)?.substring(0, 150)}`);
-
-            // API getur skilað array eða object með rooms sem object (key=room_id)
-            let roomsList = [];
-            if (Array.isArray(roomsRaw)) {
-              roomsList = roomsRaw;
-            } else if (roomsRaw?.rooms && typeof roomsRaw.rooms === 'object') {
-              roomsList = Object.values(roomsRaw.rooms);
-            }
-
-            for (const r of roomsList) {
-              // room_name getur verið á mismunandi stöðum
-              const rName = r?.room_name || r?.name || r?.description || "";
-              const flokkur = flokkaHerbergi(rName);
-              
-              // Reyna að finna lægsta verð úr block array
-              const blocks = r?.block || [];
-              let laegstaVerd = null;
-              for (const b of blocks) {
-                const price = b?.product_price_breakdown?.gross_amount?.value
-                  || b?.price?.gross?.value
-                  || b?.min_price?.value;
-                if (price && (laegstaVerd === null || price < laegstaVerd)) {
-                  laegstaVerd = price;
-                }
-              }
-
-              // Ef engin flokkun en verð finns, nota 'Standard' sem default
-              const finalFlokkur = flokkur || (laegstaVerd ? 'Standard' : null);
-              if (!finalFlokkur || !laegstaVerd) continue;
-
-              const exists = nidurstodur.find((x) => x.hotel === hotel && x.dagsetning === formatDate(checkin) && x.herbergjaflokkur === finalFlokkur);
-              if (!exists) {
-                nidurstodur.push({
-                  dagsetning: formatDate(checkin),
-                  dagsetning_obj: checkin,
-                  vikudagur: ISL_DAGAR[checkin.getDay()],
-                  hotel,
-                  herbergjaflokkur: finalFlokkur,
-                  verd: Math.round(laegstaVerd),
-                  fjoldi_herbergja: fjoldi
-                });
-              }
-            }
-
-            // Ef rooms er tómt - reyna block á top-level (sum API svör)
-            if (roomsList.length === 0) {
-              const topBlocks = Array.isArray(roomsRaw) ? [] : (roomsRaw?.block || []);
-              for (const b of topBlocks) {
-                const rName = b?.room_name || b?.name || "";
-                const flokkur = flokkaHerbergi(rName) || 'Standard';
-                const price = b?.product_price_breakdown?.gross_amount?.value || b?.price?.gross?.value;
-                if (!price) continue;
-                const exists = nidurstodur.find((x) => x.hotel === hotel && x.dagsetning === formatDate(checkin) && x.herbergjaflokkur === flokkur);
-                if (!exists) {
-                  nidurstodur.push({
-                    dagsetning: formatDate(checkin),
-                    dagsetning_obj: checkin,
-                    vikudagur: ISL_DAGAR[checkin.getDay()],
-                    hotel,
-                    herbergjaflokkur: flokkur,
-                    verd: Math.round(price),
-                    fjoldi_herbergja: fjoldi
-                  });
-                }
-              }
-            }
-          } else {
-            addLog(`⚠️ ${hotel}: dest_type er "${searchType}" - ekki "hotel"`);
-          }
-        }
-      } catch (err) {
-        addLog(`❌ Villa hjá ${hotel}: ${err.message}`);
-        setStatus(`❌ Villa hjá ${hotel}: ${err.message}`);
-      }
+def save_settings(mitt_nafn, mitt_herb, keppinautar):
+    data = {
+        "mitt_hotel_nafn": mitt_nafn,
+        "mitt_hotel_herb": mitt_herb,
+        "keppinautar": keppinautar
     }
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
-    setGogn(nidurstodur);
-    setSeldHerbergi(new Array(nidurstodur.length).fill(0));
-    setValdir([...new Set(nidurstodur.map((r) => r.herbergjaflokkur))]);
-    setStatus(nidurstodur.length > 0 ? `✅ ${nidurstodur.length} færslur sóttar!` : "⚠️ Engin gögn fundust.");
-    setLoading(false);
-  }
+# ==========================================
+# LYKILORÐSKERFI 
+# ==========================================
+def athuga_lykilord():
+    def lykilord_slegid_inn():
+        if st.session_state["lykilorð_input"] == "hotel123": 
+            st.session_state["innskradur"] = True
+            del st.session_state["lykilorð_input"]
+        else:
+            st.session_state["innskradur"] = False
 
-  async function baetaVidKeppinaut() {
-    if (!nyKeppinautur.trim()) return;
-    const updated = { ...keppinautar, [nyKeppinautur.trim()]: { fjoldi: nyKeppHerb } };
-    const upd = await base44.entities.HotelSettings.update(localSettings.id, { keppinautar: updated });
-    setLocalSettings({ ...localSettings, keppinautar: updated });
-    setNyKeppinautur("");
-    setNyKeppHerb(20);
-  }
+    if "innskradur" not in st.session_state:
+        st.title("🔒 Vinsamlegast skráðu þig inn")
+        st.text_input("Lykilorð", type="password", on_change=lykilord_slegid_inn, key="lykilorð_input")
+        return False
+    elif not st.session_state["innskradur"]:
+        st.title("🔒 Vinsamlegast skráðu þig inn")
+        st.text_input("Lykilorð", type="password", on_change=lykilord_slegid_inn, key="lykilorð_input")
+        st.error("😕 Rangt lykilorð, reyndu aftur.")
+        return False
+    else:
+        return True
 
-  async function fjarlaegraKeppinaut(nafn) {
-    const updated = { ...keppinautar };
-    delete updated[nafn];
-    await base44.entities.HotelSettings.update(localSettings.id, { keppinautar: updated });
-    setLocalSettings({ ...localSettings, keppinautar: updated });
-  }
+# ==========================================
+# API GAGNASÖFNUN (MEÐ BOOKING ID, ÁN FLOKKA)
+# ==========================================
+def saekja_raungogn(hotel_dict, fjoldi_daga):
+    API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6" 
+    idag = datetime.date.today()
+    gogn = []
+    headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": "apidojo-booking-v1.p.rapidapi.com"}
+    
+    st.write("### 📡 Sæki gögn frá Booking.com...")
+    
+    for hotel, upplysingar in hotel_dict.items():
+        herbergi = upplysingar.get("fjoldi", 0) if isinstance(upplysingar, dict) else 20
+        try:
+            url_loc = "https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete"
+            res_loc = requests.get(url_loc, headers=headers, params={"text": hotel, "languagecode": "is"})
+            data_loc = res_loc.json()
+            if not data_loc: continue
+            dest_id = data_loc[0].get("dest_id")
+            
+            for i in range(fjoldi_daga):
+                checkin = idag + datetime.timedelta(days=i)
+                url_api = "https://apidojo-booking-v1.p.rapidapi.com/properties/v2/get-rooms"
+                qs = {"hotel_id": str(dest_id), "arrival_date": checkin.strftime("%Y-%m-%d"), 
+                      "departure_date": (checkin + datetime.timedelta(days=1)).strftime("%Y-%m-%d"), 
+                      "rec_guest_qty": "2", "currency_code": "ISK"}
+                res_api = requests.get(url_api, headers=headers, params=qs)
+                data_api = res_api.json()
+                
+                if isinstance(data_api, list):
+                    for room in data_api:
+                        if "block" in room:
+                            for b in room["block"]:
+                                if "product_price_breakdown" in b:
+                                    p = b["product_price_breakdown"]["gross_amount"].get("value", 0)
+                                    gogn.append({
+                                        "Dagsetning_obj": checkin, 
+                                        "Hótel": hotel, 
+                                        "Booking ID": dest_id,
+                                        "Verð (ISK)": int(p), 
+                                        "Fjöldi herbergja": herbergi
+                                    })
+        except Exception as e: st.error(f"Villa hjá {hotel}: {e}")
+    return pd.DataFrame(gogn)
 
-  // Compute KPI rows
-  const mittNafn = localSettings?.mitt_hotel_nafn;
-  const filteredGogn = valdir.length > 0 ? gogn.filter((r) => valdir.includes(r.herbergjaflokkur)) : gogn;
-  
-  const dagsetningar = [...new Set(filteredGogn.map((r) => r.dagsetning))].sort();
-  const kpiRows = dagsetningar.map((dag) => {
-    const dagGogn = filteredGogn.filter((r) => r.dagsetning === dag && r.verd > 0);
-    const minnGogn = dagGogn.filter((r) => r.hotel === mittNafn);
-    const keppGogn = dagGogn.filter((r) => r.hotel !== mittNafn);
-    const mittVerd = minnGogn.length > 0 ? Math.round(minnGogn.reduce((s, r) => s + r.verd, 0) / minnGogn.length) : 0;
-    const keppSumV = keppGogn.reduce((s, r) => s + r.verd * r.fjoldi_herbergja, 0);
-    const keppSumH = keppGogn.reduce((s, r) => s + r.fjoldi_herbergja, 0);
-    const keppAvg = keppSumH > 0 ? Math.round(keppSumV / keppSumH) : 0;
-    const visitala = keppAvg > 0 ? Math.round((mittVerd / keppAvg) * 1000) / 10 : 0;
-    const mismunur = mittVerd - keppAvg;
-    return { dagsetning: dag, mittVerd, keppAvg, visitala, mismunur, seld: 0 };
-  });
+# ==========================================
+# AÐAL FORRITIÐ
+# ==========================================
+def main():
+    v_stilla = load_settings() or {}
+    if "mitt_hotel_nafn" not in st.session_state: st.session_state["mitt_hotel_nafn"] = v_stilla.get("mitt_hotel_nafn", "")
+    if "mitt_hotel_herb" not in st.session_state: st.session_state["mitt_hotel_herb"] = v_stilla.get("mitt_hotel_herb", 50)
+    if "keppinautar" not in st.session_state: st.session_state["keppinautar"] = v_stilla.get("keppinautar", {})
 
-  const [kpiSeld, setKpiSeld] = useState({});
-  function updateSeld(i, val) {
-    setKpiSeld((prev) => ({ ...prev, [i]: val }));
-  }
-  const kpiRowsWithSeld = kpiRows.map((r, i) => ({ ...r, seld: kpiSeld[i] ?? 0 }));
+    if st.session_state["mitt_hotel_nafn"] == "":
+        st.title("🏨 Velkomin(n) - Skráðu þitt hótel")
+        m_nafn = st.text_input("Nafn á þínu hóteli")
+        m_herb = st.number_input("Heildarfjöldi herbergja", min_value=1, value=50)
+        if st.button("Vista og halda áfram", type="primary"):
+            st.session_state.update({"mitt_hotel_nafn": m_nafn, "mitt_hotel_herb": m_herb})
+            save_settings(m_nafn, m_herb, st.session_state["keppinautar"])
+            st.rerun()
+        return 
 
-  function sækjaCSV() {
-    const rows = [["Dagsetning", "Mitt verð", "Kepp. meðaltal", "Vísitala (%)", "Mismunur", "Seld herbergi", "Nýting (%)", "RevPAR"]];
-    kpiRowsWithSeld.forEach((r) => {
-      const nyting = localSettings.mitt_hotel_herb > 0 ? ((r.seld / localSettings.mitt_hotel_herb) * 100).toFixed(1) : 0;
-      const revpar = Math.round(r.mittVerd * nyting / 100);
-      rows.push([r.dagsetning, r.mittVerd, r.keppAvg, r.visitala, r.mismunur, r.seld, nyting, revpar]);
-    });
-    const csv = rows.map((r) => r.join(",")).join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `Revenue_Report_${toISO(new Date())}.csv`; a.click();
-  }
+    st.title("📊 Hótelstjórinn - Advanced Revenue System")
+    
+    # --- SIDEBAR ---
+    st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}** ({st.session_state['mitt_hotel_herb']} herb.)")
+    if st.sidebar.button("Breyta mínu hóteli"):
+        st.session_state["mitt_hotel_nafn"] = ""; st.rerun()
+    
+    st.sidebar.markdown("---")
+    st.sidebar.header("Bæta við Keppinauti")
+    n_k = st.sidebar.text_input("Nafn á keppinauti")
+    k_h = st.sidebar.number_input("Fjöldi herbergja hjá keppinauti", min_value=1, value=20)
+    if st.sidebar.button("Bæta við keppinauti"):
+        st.session_state['keppinautar'][n_k] = {"fjoldi": k_h}
+        save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['keppinautar'])
+        st.rerun()
 
-  const allirFlokkar = [...new Set(gogn.map((r) => r.herbergjaflokkur))];
+    if len(st.session_state['keppinautar']) > 0:
+        st.sidebar.markdown("### Valdir keppinautar:")
+        kepp_listi = list(st.session_state['keppinautar'].keys())
+        for h_nafn in kepp_listi:
+            c1, c2 = st.sidebar.columns([4, 1])
+            c1.markdown(f"- **{h_nafn}** ({st.session_state['keppinautar'][h_nafn].get('fjoldi', 0)} herb.)")
+            if c2.button("🗑️", key=f"del_{h_nafn}"):
+                del st.session_state['keppinautar'][h_nafn]
+                save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['keppinautar'])
+                st.rerun()
+                
+        if st.sidebar.button("Hreinsa alla keppinauta"):
+            st.session_state['keppinautar'] = {}
+            save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], {})
+            st.rerun()
 
-  return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <div className="bg-slate-800 text-white px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">📊 Hótelstjórinn</h1>
-          <p className="text-slate-300 text-sm">Advanced Revenue Management System</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="text-slate-800 bg-white hover:bg-slate-100" onClick={onLogout}>
-            <LogOut className="w-4 h-4 mr-1" /> Útskrá
-          </Button>
-        </div>
-      </div>
+    c1, c2, c3 = st.columns(3)
+    d = 0
+    if c1.button("Sækja verð núna"): d = 1
+    if c2.button("Sækja verð næstu 7 daga"): d = 7
+    if c3.button("Sækja verð næstu 30 daga", type="primary"): d = 30
 
-      <div className="flex">
-        {/* Sidebar */}
-        <div className="w-72 min-h-screen bg-white border-r p-4 space-y-5 flex-shrink-0">
-          <div>
-            <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Mitt hótel</p>
-            <p className="font-bold text-slate-800">{localSettings.mitt_hotel_nafn}</p>
-            <p className="text-sm text-slate-500">{localSettings.mitt_hotel_herb} herbergi</p>
-            <Button variant="ghost" size="sm" className="mt-1 text-xs" onClick={onResetSetup}>Breyta</Button>
-          </div>
+    if d > 0:
+        leitargogn = {st.session_state['mitt_hotel_nafn']: {"fjoldi": st.session_state['mitt_hotel_herb']}}
+        leitargogn.update(st.session_state['keppinautar'])
+        res_df = saekja_raungogn(leitargogn, d)
+        st.session_state['api_gogn'] = res_df
+        st.session_state['dagar_valdir'] = d
+        if not res_df.empty:
+            try:
+                db.append_rows(res_df.astype(str).values.tolist())
+                st.toast("✅ Gögn vistuð sjálfvirkt í Pace!", icon="💾")
+            except: pass
 
-          <Separator />
+    df_raw = st.session_state.get('api_gogn', pd.DataFrame())
+    if not df_raw.empty:
+        # BÚUM TIL HREINT DATAFRAME ÁN TVÍTUNGA LÍNA (Lægsta verð valið per dag/hótel)
+        df = df_raw.groupby(['Dagsetning_obj', 'Hótel', 'Booking ID', 'Fjöldi herbergja'])['Verð (ISK)'].min().reset_index()
+        
+        df['Dagsetning'] = pd.to_datetime(df['Dagsetning_obj']).dt.strftime("%d.%m")
+        isl_dagar = {0:'Mán', 1:'Þri', 2:'Mið', 3:'Fim', 4:'Fös', 5:'Lau', 6:'Sun'}
+        df['Vikudagur'] = pd.to_datetime(df['Dagsetning_obj']).dt.dayofweek.map(isl_dagar)
+        
+        # --- TAFLA HLIÐ VIÐ HLIÐ ---
+        st.markdown("---")
+        st.subheader("Verðyfirlit hlið við hlið")
+        pivot = df.pivot_table(index=['Dagsetning', 'Vikudagur'], columns='Hótel', values='Verð (ISK)', aggfunc='min').reset_index()
+        pivot_syna = pivot.copy()
+        for col in pivot_syna.columns:
+            if col not in ['Dagsetning', 'Vikudagur']:
+                pivot_syna[col] = pivot_syna[col].apply(lambda x: f"{int(x):,}".replace(",", ".") + " ISK" if pd.notna(x) else "Uppselt")
+        st.dataframe(pivot_syna, use_container_width=True, hide_index=True)
 
-          <div>
-            <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Keppinautar</p>
-            <div className="space-y-1 mb-3">
-              {Object.entries(keppinautar).map(([nafn, v]) => (
-                <div key={nafn} className="flex items-center justify-between bg-slate-50 rounded px-2 py-1">
-                  <span className="text-sm">{nafn} <span className="text-slate-400">({v.fjoldi})</span></span>
-                  <button onClick={() => fjarlaegraKeppinaut(nafn)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
-                </div>
-              ))}
-              {Object.keys(keppinautar).length === 0 && <p className="text-xs text-slate-400">Engir keppinautar skráðir</p>}
-            </div>
-            <div className="space-y-2">
-              <Input placeholder="Nafn hótels" value={nyKeppinautur} onChange={(e) => setNyKeppinautur(e.target.value)} className="text-sm h-8" />
-              <Input type="number" min={1} placeholder="Fjöldi herbergja" value={nyKeppHerb} onChange={(e) => setNyKeppHerb(Number(e.target.value))} className="text-sm h-8" />
-              <Button size="sm" className="w-full" onClick={baetaVidKeppinaut}>
-                <Plus className="w-3 h-3 mr-1" /> Bæta við
-              </Button>
-            </div>
-          </div>
+        # --- AÐAL SÚLURITIÐ (VERÐÞRÓUN) ---
+        st.subheader("Verðþróun (Súlurit)")
+        # Hér kemur Booking ID fram í hover_data
+        fig_main = px.bar(df[df['Verð (ISK)']>0], x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group', hover_data=["Booking ID"])
+        st.plotly_chart(fig_main, use_container_width=True)
 
-          {allirFlokkar.length > 0 && (
-            <>
-              <Separator />
-              <div>
-                <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Sía herbergjaflokka</p>
-                <div className="space-y-1">
-                  {allirFlokkar.map((f) => (
-                    <label key={f} className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={valdir.includes(f)}
-                        onChange={(e) => {
-                          if (e.target.checked) setValdir((p) => [...p, f]);
-                          else setValdir((p) => p.filter((x) => x !== f));
-                        }}
-                      />
-                      <span className="truncate">{f}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        # --- KPI ÚTREIKNINGAR ---
+        df_l = df[df['Verð (ISK)'] > 0]
+        m_nafn = st.session_state['mitt_hotel_nafn']
+        
+        if not df_l[df_l['Hótel'] == m_nafn].empty:
+            df_m = df_l[df_l['Hótel'] == m_nafn].groupby('Dagsetning')['Verð (ISK)'].mean().reset_index().rename(columns={'Verð (ISK)':'Mitt_V'})
+        else:
+            df_m = pd.DataFrame(columns=['Dagsetning', 'Mitt_V'])
+            
+        df_k = df_l[df_l['Hótel'] != m_nafn].copy()
+        
+        if not df_k.empty:
+            df_k['Vægi'] = df_k['Verð (ISK)'] * df_k['Fjöldi herbergja']
+            k_avg = df_k.groupby('Dagsetning').agg(SV=('Vægi','sum'), SH=('Fjöldi herbergja','sum')).reset_index()
+            k_avg['Markad_V'] = (k_avg['SV']/k_avg['SH']).round(0).fillna(0)
+        else:
+            k_avg = pd.DataFrame(columns=['Dagsetning', 'Markad_V'])
+        
+        kpi_base = pd.merge(df_m, k_avg[['Dagsetning','Markad_V']], on='Dagsetning', how='outer').fillna(0)
+        kpi_base['Vísitala (%)'] = np.where(kpi_base['Markad_V']>0, (kpi_base['Mitt_V']/kpi_base['Markad_V']*100).round(0).astype(int), 0)
+        kpi_base['Verðmismunur (ISK)'] = (kpi_base['Mitt_V'] - kpi_base['Markad_V']).round(0).astype(int)
 
-        {/* Main content */}
-        <div className="flex-1 p-6 space-y-6">
-          {/* Fetch buttons */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">📡 Sækja gögn frá Booking.com</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-3 flex-wrap">
-                <Button onClick={() => saekjaGogn(1)} disabled={loading} variant="outline">
-                  <RefreshCw className="w-4 h-4 mr-1" /> Sækja í dag
-                </Button>
-                <Button onClick={() => saekjaGogn(7)} disabled={loading} variant="outline">
-                  Sækja 7 daga
-                </Button>
-                <Button onClick={() => saekjaGogn(30)} disabled={loading}>
-                  Sækja 30 daga
-                </Button>
-              </div>
-              {status && <p className="mt-3 text-sm text-slate-600">{status}</p>}
-              {debugLog.length > 0 && (
-                <details className="mt-3">
-                  <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700 select-none">
-                    🔍 Sýna {debugLog.length} skráningarlínur
-                  </summary>
-                  <div className="mt-2 bg-slate-900 rounded p-3 max-h-48 overflow-y-auto">
-                    {debugLog.map((line, i) => (
-                      <p key={i} className="text-xs text-green-300 font-mono whitespace-pre-wrap">{line}</p>
-                    ))}
-                  </div>
-                </details>
-              )}
-              {loading && (
-                <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
-                  <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin" />
-                  Sæki gögn, þetta kann að taka smá stund...
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        if 'Seld_herb' not in st.session_state or len(st.session_state['Seld_herb']) != len(kpi_base):
+            st.session_state['Seld_herb'] = [0] * len(kpi_base)
+        kpi_base['Seld herbergi'] = st.session_state['Seld_herb']
+        
+        st.markdown("---")
+        st.subheader("⚙️ KPI & Tekjustýring")
+        kpi_edit = st.data_editor(kpi_base, hide_index=True, use_container_width=True)
+        st.session_state['Seld_herb'] = kpi_edit['Seld herbergi'].tolist()
+        
+        # Allt formattað sem INT (heilar tölur)
+        kpi_edit['Nýting (%)'] = (kpi_edit['Seld herbergi'] / st.session_state['mitt_hotel_herb'] * 100).round(0).astype(int)
+        kpi_edit['RevPAR'] = (kpi_edit['Mitt_V'] * kpi_edit['Nýting (%)'] / 100).round(0).astype(int)
+        
+        def stefna(r):
+            if r['Nýting (%)'] >= 80 and r['Vísitala (%)'] < 100: return "🔴 Hækka verð strax!"
+            if r['Nýting (%)'] < 40 and r['Vísitala (%)'] > 105: return "🔵 Lækka verð"
+            return "🟡 Fylgjast með"
+            
+        kpi_edit['Aðgerð'] = kpi_edit.apply(stefna, axis=1)
+        st.dataframe(kpi_edit[['Dagsetning','Seld herbergi','Nýting (%)','RevPAR','Aðgerð']], use_container_width=True, hide_index=True)
 
-          <Tabs defaultValue="calendar">
-            <TabsList className="flex-wrap h-auto gap-1 mb-2">
-              <TabsTrigger value="overview">📊 Verðyfirlit</TabsTrigger>
-              <TabsTrigger value="calendar">📅 Verðdagatal</TabsTrigger>
-              <TabsTrigger value="kpi">⚙️ KPI tafla</TabsTrigger>
-              <TabsTrigger value="competitor">🏨 Keppnisgreining</TabsTrigger>
-              <TabsTrigger value="demand">📈 Demand Curve</TabsTrigger>
-              <TabsTrigger value="elasticity">📊 Elasticity</TabsTrigger>
-              <TabsTrigger value="pace">📅 Booking Pace</TabsTrigger>
-              <TabsTrigger value="matrix">📉 Verð/Nýting</TabsTrigger>
-              <TabsTrigger value="channel">📡 Channel</TabsTrigger>
-              <TabsTrigger value="opportunity">💰 Tækifæri</TabsTrigger>
-              <TabsTrigger value="displacement">🏢 Hópar</TabsTrigger>
-              <TabsTrigger value="ai">🤖 AI Tillögur</TabsTrigger>
-              <TabsTrigger value="raadata">📋 Gögn</TabsTrigger>
-            </TabsList>
+        # ==========================================
+        # 🚀 RMS ÍTARLEGAR SKÝRSLUR
+        # ==========================================
+        st.markdown("---")
+        st.header("🚀 RMS Ítarlegar Skýrslur")
+        rms_tabs = st.tabs([
+            "1. Pricing Calendar", "2. Demand vs Price", "3. Elasticity", 
+            "4. Pace vs Price", "5. Competitor Shop", "6. Group Displacement", 
+            "7. Opportunity", "8. Occupancy Matrix", "9. Channels", "10. AI Recs"
+        ])
+        
+        with rms_tabs[0]:
+            st.subheader("📅 1. Pricing Calendar (Verðdagatal)")
+            cal_view = kpi_edit[['Dagsetning', 'Mitt_V', 'Nýting (%)', 'RevPAR']].copy()
+            st.dataframe(cal_view, use_container_width=True, hide_index=True)
+            
+        with rms_tabs[1]:
+            st.subheader("📊 2. Demand vs Price")
+            fig_demand = px.bar(kpi_edit, x="Nýting (%)", y="Mitt_V", color="Dagsetning", title="Eftirspurn vs. Verð", labels={"Mitt_V": "Verð (ISK)"})
+            st.plotly_chart(fig_demand, use_container_width=True)
+            
+        with rms_tabs[2]:
+            st.subheader("🧪 3. Price Elasticity")
+            st.line_chart(kpi_edit.set_index('Dagsetning')[['Vísitala (%)', 'Nýting (%)']])
 
-            <TabsContent value="overview">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">📊 Verðyfirlit, Meðalverð & Verðþróun</CardTitle></CardHeader>
-              <CardContent><PriceOverview gogn={filteredGogn} mittNafn={mittNafn} /></CardContent></Card>
-            </TabsContent>
+        with rms_tabs[3]:
+            st.subheader("🏎️ 4. Booking Pace vs Price")
+            fig_pace = px.scatter(kpi_edit, x="Mitt_V", y="Seld herbergi", size="Nýting (%)", color="Dagsetning", labels={"Mitt_V": "Mitt Verð"})
+            st.plotly_chart(fig_pace, use_container_width=True)
 
-            <TabsContent value="calendar">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">📊 Pricing Calendar — Verðdagatal</CardTitle></CardHeader>
-              <CardContent><PricingCalendar kpiRows={kpiRowsWithSeld} mittHotelHerb={localSettings.mitt_hotel_herb} onUpdateSeld={updateSeld} /></CardContent></Card>
-            </TabsContent>
+        with rms_tabs[4]:
+            st.subheader("🕵️ 5. Competitor Pricing (Rate Shopping)")
+            st.dataframe(pivot_syna, use_container_width=True)
 
-            <TabsContent value="kpi">
-              <Card>
-                <CardHeader className="pb-3 flex flex-row items-center justify-between">
-                  <CardTitle className="text-base">⚙️ KPI & Verðstefna</CardTitle>
-                  <Button size="sm" variant="outline" onClick={sækjaCSV}><Download className="w-4 h-4 mr-1" /> CSV</Button>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <KPITable kpiRows={kpiRowsWithSeld} onUpdateSeld={updateSeld} mittHotelHerb={localSettings.mitt_hotel_herb} />
-                  <div className="text-xs text-slate-500 space-y-1 bg-slate-50 p-3 rounded">
-                    <p><strong>🔴 Hækka verð strax!</strong> — Nýting yfir 80% en ódýrari en markaðurinn</p>
-                    <p><strong>🟢 Sterk staða</strong> — Nýting yfir 80% og á eða yfir markaðsverði</p>
-                    <p><strong>🔵 Lækka verð</strong> — Nýting undir 40% og dýrari en markaðurinn</p>
-                    <p><strong>🟡 Fylgjast með</strong> — Nýting og verð í jafnvægi</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+        with rms_tabs[5]:
+            st.subheader("👥 6. Group Displacement")
+            disp = kpi_edit[['Dagsetning', 'RevPAR']].copy()
+            disp['Min Group Rate'] = (disp['RevPAR'] * 1.1).round(0).astype(int)
+            st.dataframe(disp, use_container_width=True, hide_index=True)
 
-            <TabsContent value="competitor">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">🏨 Competitor Pricing — Rate Shopping</CardTitle></CardHeader>
-              <CardContent><CompetitorPricing gogn={filteredGogn} mittNafn={mittNafn} /></CardContent></Card>
-            </TabsContent>
+        with rms_tabs[6]:
+            st.subheader("💎 7. Revenue Opportunity")
+            opp_df = kpi_edit[['Dagsetning', 'Verðmismunur (ISK)']].copy()
+            opp_df['Töpuð Tækifæri'] = opp_df['Verðmismunur (ISK)'].apply(lambda x: abs(x) if x < 0 else 0).round(0).astype(int)
+            st.bar_chart(opp_df.set_index('Dagsetning')['Töpuð Tækifæri'])
 
-            <TabsContent value="demand">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">📈 Demand vs Price Curve</CardTitle></CardHeader>
-              <CardContent><DemandCurve kpiRows={kpiRowsWithSeld} mittHotelHerb={localSettings.mitt_hotel_herb} /></CardContent></Card>
-            </TabsContent>
+        with rms_tabs[7]:
+            st.subheader("🔲 8. Price vs Occupancy Matrix")
+            st.table(pd.DataFrame({
+                "Nýting": ["<30%", "30-70%", "70-90%", ">90%"],
+                "Aðgerð": ["Lágmarksverð / Tilboð", "Fylgjast með markaði", "Hækka verð jafnt og þétt", "Maximize - Hæsta mögulega verð"]
+            }))
 
-            <TabsContent value="elasticity">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">📊 Price Elasticity</CardTitle></CardHeader>
-              <CardContent><PriceElasticity kpiRows={kpiRowsWithSeld} mittHotelHerb={localSettings.mitt_hotel_herb} /></CardContent></Card>
-            </TabsContent>
+        with rms_tabs[8]:
+            st.subheader("🌐 9. Channel Performance")
+            st.write("Áætluð ADR dreifing yfir sölurásir:")
+            st.table(pd.DataFrame({
+                "Rás": ["Booking.com", "Expedia", "Direct (Vefur)"], 
+                "ADR (ISK)": [(kpi_edit['Mitt_V'].mean()*0.85).round(0).astype(int), 
+                              (kpi_edit['Mitt_V'].mean()*0.82).round(0).astype(int), 
+                              (kpi_edit['Mitt_V'].mean()).round(0).astype(int)]
+            }))
 
-            <TabsContent value="pace">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">📅 Booking Pace vs Price</CardTitle></CardHeader>
-              <CardContent><BookingPace kpiRows={kpiRowsWithSeld} mittHotelHerb={localSettings.mitt_hotel_herb} /></CardContent></Card>
-            </TabsContent>
+        with rms_tabs[9]:
+            st.subheader("🤖 10. AI Pricing Recommendations")
+            ai_view = kpi_edit.copy()
+            ai_view['Rökstuðningur'] = np.where(ai_view['Aðgerð'].str.contains('🔴'), "Há nýting & lágt verð", 
+                                       np.where(ai_view['Aðgerð'].str.contains('🔵'), "Lág nýting & of hátt verð", "Staðan er í jafnvægi"))
+            st.dataframe(ai_view[['Dagsetning', 'Mitt_V', 'Aðgerð', 'Rökstuðningur']], use_container_width=True, hide_index=True)
 
-            <TabsContent value="matrix">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">📉 Price vs Occupancy Matrix</CardTitle></CardHeader>
-              <CardContent><PriceOccupancyMatrix kpiRows={kpiRowsWithSeld} mittHotelHerb={localSettings.mitt_hotel_herb} /></CardContent></Card>
-            </TabsContent>
+        # --- EXCEL ÚTFLUTNINGUR ---
+        st.markdown("---")
+        out = io.BytesIO()
+        with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
+            kpi_edit.to_excel(writer, sheet_name='Tekjustýring', index=False)
+            pivot.to_excel(writer, sheet_name='Verðfylki (Matrix)', index=False)
+            df.to_excel(writer, sheet_name='Hrá gögn', index=False)
+        st.download_button("📥 Sækja Mega Excel Skýrslu", out.getvalue(), f"Report_{datetime.date.today()}.xlsx", type="primary")
 
-            <TabsContent value="channel">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">📡 Channel Pricing Performance</CardTitle></CardHeader>
-              <CardContent><ChannelPricing kpiRows={kpiRowsWithSeld} /></CardContent></Card>
-            </TabsContent>
-
-            <TabsContent value="opportunity">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">💰 Revenue Opportunity</CardTitle></CardHeader>
-              <CardContent><RevenueOpportunity kpiRows={kpiRowsWithSeld} mittHotelHerb={localSettings.mitt_hotel_herb} /></CardContent></Card>
-            </TabsContent>
-
-            <TabsContent value="displacement">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">🏢 Displacement Analysis — Hópar</CardTitle></CardHeader>
-              <CardContent><DisplacementAnalysis kpiRows={kpiRowsWithSeld} mittHotelHerb={localSettings.mitt_hotel_herb} /></CardContent></Card>
-            </TabsContent>
-
-            <TabsContent value="ai">
-              <Card><CardHeader className="pb-2"><CardTitle className="text-base">🤖 AI Pricing Recommendations</CardTitle></CardHeader>
-              <CardContent><AIRecommendations kpiRows={kpiRowsWithSeld} mittHotelHerb={localSettings.mitt_hotel_herb} mittNafn={mittNafn} keppinautar={keppinautar} /></CardContent></Card>
-            </TabsContent>
-
-            <TabsContent value="raadata">
-              {filteredGogn.length > 0 ? (
-                <Card><CardHeader className="pb-2"><CardTitle className="text-base">📋 Hrátt verðyfirlit</CardTitle></CardHeader>
-                <CardContent><PriceTable df={filteredGogn} /></CardContent></Card>
-              ) : <p className="text-sm text-slate-400 p-4">Engin gögn — sæktu gögn fyrst.</p>}
-            </TabsContent>
-          </Tabs>
-        </div>
-      </div>
-    </div>
-  );
-}
+if athuga_lykilord(): main()
