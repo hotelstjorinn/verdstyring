@@ -12,18 +12,12 @@ import os
 
 # --- TENGING VIÐ GAGNAGRUNN ---
 try:
-    # 1. Sækja lykilinn úr leynihólfinu hjá Streamlit
     key_dict = json.loads(st.secrets["google_credentials"])
-    
-    # 2. Auðkenna og tengjast Google
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
     client = gspread.authorize(creds)
-    
-    # 3. Opna skjalið
     db = client.open("Hotel_Pace_DB").sheet1
     st.sidebar.success("🟢 Tenging við gagnagrunn virk!")
-
 except Exception as e:
     st.sidebar.error(f"🔴 Gat ekki tengst gagnagrunni: {e}")
 # ------------------------------
@@ -216,6 +210,7 @@ def main():
     if col2.button("Sækja verð næstu 7 daga"): st.session_state['dagar_valdir'] = 7
     if col3.button("Sækja verð næstu 30 daga", type="primary"): st.session_state['dagar_valdir'] = 30
 
+    # NÝR KÓÐI FYRIR SJÁLFVIRKNI: Við setjum upp "fána" ef ný leit var framkvæmd
     if st.session_state['dagar_valdir'] > 0 and st.session_state.get('síðast_leitað') != st.session_state['dagar_valdir']:
         if len(st.session_state['keppinautar']) > 0:
             leitargogn = {st.session_state['mitt_hotel_nafn']: st.session_state['mitt_hotel_herb']}
@@ -223,6 +218,7 @@ def main():
             df = saekja_raungogn(leitargogn, st.session_state['dagar_valdir']) 
             st.session_state['api_gogn'] = df
             st.session_state['síðast_leitað'] = st.session_state['dagar_valdir']
+            st.session_state['vista_pessa_leit'] = True  # <--- Hér fer fáninn upp!
 
     df = st.session_state['api_gogn']
     
@@ -236,6 +232,27 @@ def main():
         df['Vikudagur'] = pd.to_datetime(df['Dagsetning_obj']).dt.dayofweek.map(islenskir_dagar)
         
         df_laust = df[df['Verð (ISK)'] > 0].copy()
+
+        # --- SJÁLFKRAFA VISTUN (Ef fáninn er uppi) ---
+        if st.session_state.get('vista_pessa_leit', False):
+            try:
+                nuna = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                df_til_ad_vista = df.copy() 
+                df_til_ad_vista["Sótt klukkan"] = nuna
+                df_til_ad_vista["Dagsetning_obj"] = df_til_ad_vista["Dagsetning_obj"].astype(str)
+                dalkar = ["Sótt klukkan", "Dagsetning_obj", "Dagsetning", "Vikudagur", "Hótel", "Fjöldi herbergja", "Verð (ISK)", "Staða"]
+                df_til_ad_vista = df_til_ad_vista[dalkar]
+
+                gogn_til_ad_vista = df_til_ad_vista.values.tolist()
+                db.append_rows(gogn_til_ad_vista)
+                # Toast er lítil tilkynning sem poppar upp í nokkrar sekúndur án þess að taka pláss
+                st.toast("✅ Ný gögn vistuð sjálfkrafa í gagnagrunn!", icon="💾") 
+            except Exception as e:
+                st.error(f"🔴 Eitthvað fór úrskeiðis við sjálfvirka vistun: {e}")
+            
+            # Tökum fánann niður, svo forritið visti ekki aftur nema gerð sé ný leit!
+            st.session_state['vista_pessa_leit'] = False 
+        # ---------------------------------------------
 
         # ==========================================
         # HLUTI 1: YFIRLIT ALLRA 
@@ -253,30 +270,6 @@ def main():
                 if col not in ['Dagsetning', 'Vikudagur']:
                     df_pivot[col] = df_pivot[col].apply(lambda x: f"{int(x):,} ISK".replace(",", ".") if pd.notna(x) and x > 0 else "Uppselt")
             st.dataframe(df_pivot, use_container_width=True, hide_index=True)
-            
-            # --- VISTA Í GAGNAGRUNN HNAPPUR (PACE) ---
-            st.markdown("---")
-            if st.button("💾 Vista þessi verð í gagnagrunn (Pace)", type="primary"):
-                try:
-                    with st.spinner("Vistar í Google Sheets..."):
-                        nuna = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        df_til_ad_vista = df.copy() 
-                        df_til_ad_vista["Sótt klukkan"] = nuna
-                        
-                        # Breyta Dagsetning_obj í streng (svo Google Sheets skilji það)
-                        df_til_ad_vista["Dagsetning_obj"] = df_til_ad_vista["Dagsetning_obj"].astype(str)
-                        
-                        # Tryggjum að dálkarnir fari alltaf í sömu röð
-                        dalkar = ["Sótt klukkan", "Dagsetning_obj", "Dagsetning", "Vikudagur", "Hótel", "Fjöldi herbergja", "Verð (ISK)", "Staða"]
-                        df_til_ad_vista = df_til_ad_vista[dalkar]
-
-                        gogn_til_ad_vista = df_til_ad_vista.values.tolist()
-                        db.append_rows(gogn_til_ad_vista)
-                        st.success("✅ Verðin hafa verið vistuð! Kíktu í Google Sheets skjalið þitt til að sjá nýju færslurnar.")
-                except Exception as e:
-                    st.error(f"🔴 Eitthvað fór úrskeiðis við vistun: {e}")
-            # -----------------------------------------
 
         if not df_laust.empty:
             df_medaltal = df_laust.groupby('Dagsetning')['Verð (ISK)'].mean().reset_index()
