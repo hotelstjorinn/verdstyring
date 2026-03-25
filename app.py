@@ -35,10 +35,11 @@ def load_settings():
             return json.load(f)
     return None
 
-def save_settings(mitt_nafn, mitt_herb, keppinautar):
+def save_settings(mitt_nafn, mitt_herb, mitt_flokkur, keppinautar):
     data = {
         "mitt_hotel_nafn": mitt_nafn,
         "mitt_hotel_herb": mitt_herb,
+        "mitt_hotel_flokkur": mitt_flokkur,
         "keppinautar": keppinautar
     }
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
@@ -82,7 +83,10 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
     
     st.write("### 📡 Tengist við Booking.com...")
     
-    for hotel, herbergi in hotel_dict.items():
+    for hotel, upplysingar in hotel_dict.items():
+        herbergi = upplysingar.get("fjoldi", 0)
+        flokkur = upplysingar.get("flokkur", "Standard")
+        
         try:
             url_loc = "https://apidojo-booking-v1.p.rapidapi.com/locations/auto-complete"
             qs_loc = {"text": hotel, "languagecode": "is"}
@@ -96,7 +100,7 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
             dest_id = data_loc[0].get("dest_id")
             search_type = data_loc[0].get("dest_type", "city") 
             fundid_nafn = data_loc[0].get("name", hotel)
-            st.info(f"📍 **{hotel}** fundið! Booking Nafn: *{fundid_nafn}* | Booking ID: `{dest_id}`")
+            st.info(f"📍 **{hotel}** fundið! Booking Nafn: *{fundid_nafn}* | ID: `{dest_id}`")
             
             for i in range(fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
@@ -142,7 +146,13 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
                         elif "min_total_price" in hotel_data:
                             verd = hotel_data.get("min_total_price", 0)
 
-                gogn.append({"Dagsetning_obj": checkin_dagur, "Hótel": hotel, "Verð (ISK)": verd, "Fjöldi herbergja": herbergi})
+                gogn.append({
+                    "Dagsetning_obj": checkin_dagur, 
+                    "Hótel": hotel, 
+                    "Herbergjaflokkur": flokkur,
+                    "Verð (ISK)": verd, 
+                    "Fjöldi herbergja": herbergi
+                })
         except Exception as e:
             st.error(f"Villa við að tengjast API fyrir {hotel}. (Villa: {e})")
     return pd.DataFrame(gogn)
@@ -156,27 +166,31 @@ def main():
         if vistaðar_stillingar:
             st.session_state["mitt_hotel_nafn"] = vistaðar_stillingar.get("mitt_hotel_nafn", "")
             st.session_state["mitt_hotel_herb"] = vistaðar_stillingar.get("mitt_hotel_herb", 0)
+            st.session_state["mitt_hotel_flokkur"] = vistaðar_stillingar.get("mitt_hotel_flokkur", "Standard")
             st.session_state["keppinautar"] = vistaðar_stillingar.get("keppinautar", {})
         else:
             st.session_state["mitt_hotel_nafn"] = ""
             st.session_state["mitt_hotel_herb"] = 0
+            st.session_state["mitt_hotel_flokkur"] = "Standard"
             st.session_state["keppinautar"] = {}
 
     if st.session_state["mitt_hotel_nafn"] == "":
         st.title("🏨 Velkomin(n) - Skráðu þitt hótel")
         m_nafn = st.text_input("Nafn á þínu hóteli")
-        m_herb = st.number_input("Fjöldi herbergja á þínu hóteli", min_value=1, value=50, step=1)
+        m_flokkur = st.text_input("Hvaða herbergjaflokk viltu fylgjast með? (t.d. Standard, Superior)", value="Standard")
+        m_herb = st.number_input(f"Fjöldi herbergja í flokknum '{m_flokkur}'", min_value=1, value=50, step=1)
         if st.button("Vista og halda áfram", type="primary"):
             if m_nafn:
                 st.session_state["mitt_hotel_nafn"] = m_nafn
                 st.session_state["mitt_hotel_herb"] = m_herb
-                save_settings(m_nafn, m_herb, st.session_state["keppinautar"])
+                st.session_state["mitt_hotel_flokkur"] = m_flokkur
+                save_settings(m_nafn, m_herb, m_flokkur, st.session_state["keppinautar"])
                 st.rerun()
         return 
 
     st.title("📊 Hótelstjórinn - Advanced Revenue System")
 
-    st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}** ({st.session_state['mitt_hotel_herb']} herb.)")
+    st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}**\n- **Flokkur:** {st.session_state['mitt_hotel_flokkur']}\n- **Fjöldi:** {st.session_state['mitt_hotel_herb']} herb.")
     if st.sidebar.button("Breyta mínu hóteli"):
         st.session_state["mitt_hotel_nafn"] = ""
         st.rerun()
@@ -184,21 +198,22 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.header("Bæta við Keppinauti")
     nyr_keppinautur = st.sidebar.text_input("Nafn á keppinauti")
-    kepp_herb = st.sidebar.number_input("Fjöldi herbergja (Keppinautur)", min_value=1, value=20, step=1)
+    kepp_flokkur = st.sidebar.text_input("Herbergjaflokkur (Keppinautur)", value="Standard")
+    kepp_herb = st.sidebar.number_input("Fjöldi herbergja í þessum flokki", min_value=1, value=20, step=1)
     
     if st.sidebar.button("Bæta við keppinauti"):
         if nyr_keppinautur and nyr_keppinautur not in st.session_state['keppinautar'] and nyr_keppinautur.lower() != st.session_state['mitt_hotel_nafn'].lower():
-            st.session_state['keppinautar'][nyr_keppinautur] = kepp_herb
-            save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['keppinautar'])
+            st.session_state['keppinautar'][nyr_keppinautur] = {"fjoldi": kepp_herb, "flokkur": kepp_flokkur}
+            save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['mitt_hotel_flokkur'], st.session_state['keppinautar'])
             st.rerun()
 
     if len(st.session_state['keppinautar']) > 0:
         st.sidebar.markdown("### Valdir keppinautar:")
-        for k_hotel, k_f in st.session_state['keppinautar'].items():
-            st.sidebar.markdown(f"- **{k_hotel}** ({k_f} herb.)")
+        for k_hotel, k_info in st.session_state['keppinautar'].items():
+            st.sidebar.markdown(f"- **{k_hotel}** \n  *(Flokkur: {k_info['flokkur']} | {k_info['fjoldi']} herb.)*")
         if st.sidebar.button("Hreinsa alla keppinauta"):
             st.session_state['keppinautar'] = {}
-            save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], {})
+            save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['mitt_hotel_flokkur'], {})
             st.rerun()
 
     if 'api_gogn' not in st.session_state:
@@ -210,15 +225,14 @@ def main():
     if col2.button("Sækja verð næstu 7 daga"): st.session_state['dagar_valdir'] = 7
     if col3.button("Sækja verð næstu 30 daga", type="primary"): st.session_state['dagar_valdir'] = 30
 
-    # NÝR KÓÐI FYRIR SJÁLFVIRKNI: Við setjum upp "fána" ef ný leit var framkvæmd
     if st.session_state['dagar_valdir'] > 0 and st.session_state.get('síðast_leitað') != st.session_state['dagar_valdir']:
         if len(st.session_state['keppinautar']) > 0:
-            leitargogn = {st.session_state['mitt_hotel_nafn']: st.session_state['mitt_hotel_herb']}
+            leitargogn = {st.session_state['mitt_hotel_nafn']: {"fjoldi": st.session_state['mitt_hotel_herb'], "flokkur": st.session_state['mitt_hotel_flokkur']}}
             leitargogn.update(st.session_state['keppinautar'])
             df = saekja_raungogn(leitargogn, st.session_state['dagar_valdir']) 
             st.session_state['api_gogn'] = df
             st.session_state['síðast_leitað'] = st.session_state['dagar_valdir']
-            st.session_state['vista_pessa_leit'] = True  # <--- Hér fer fáninn upp!
+            st.session_state['vista_pessa_leit'] = True
 
     df = st.session_state['api_gogn']
     
@@ -233,24 +247,23 @@ def main():
         
         df_laust = df[df['Verð (ISK)'] > 0].copy()
 
-        # --- SJÁLFKRAFA VISTUN (Ef fáninn er uppi) ---
+        # --- SJÁLFKRAFA VISTUN ---
         if st.session_state.get('vista_pessa_leit', False):
             try:
                 nuna = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 df_til_ad_vista = df.copy() 
                 df_til_ad_vista["Sótt klukkan"] = nuna
                 df_til_ad_vista["Dagsetning_obj"] = df_til_ad_vista["Dagsetning_obj"].astype(str)
-                dalkar = ["Sótt klukkan", "Dagsetning_obj", "Dagsetning", "Vikudagur", "Hótel", "Fjöldi herbergja", "Verð (ISK)", "Staða"]
+                # Athugið: Bætt við "Herbergjaflokkur" dálknum - þarf að uppfæra Google Sheet!
+                dalkar = ["Sótt klukkan", "Dagsetning_obj", "Dagsetning", "Vikudagur", "Hótel", "Herbergjaflokkur", "Fjöldi herbergja", "Verð (ISK)", "Staða"]
                 df_til_ad_vista = df_til_ad_vista[dalkar]
 
                 gogn_til_ad_vista = df_til_ad_vista.values.tolist()
                 db.append_rows(gogn_til_ad_vista)
-                # Toast er lítil tilkynning sem poppar upp í nokkrar sekúndur án þess að taka pláss
                 st.toast("✅ Ný gögn vistuð sjálfkrafa í gagnagrunn!", icon="💾") 
             except Exception as e:
                 st.error(f"🔴 Eitthvað fór úrskeiðis við sjálfvirka vistun: {e}")
             
-            # Tökum fánann niður, svo forritið visti ekki aftur nema gerð sé ný leit!
             st.session_state['vista_pessa_leit'] = False 
         # ---------------------------------------------
 
@@ -260,7 +273,7 @@ def main():
         st.markdown("---")
         st.subheader(f"Verðyfirlit ({st.session_state['dagar_valdir']} dagar)")
         
-        syndir_dalkar = ['Dagsetning', 'Vikudagur', 'Hótel', 'Fjöldi herbergja', 'Verð sýnt', 'Staða']
+        syndir_dalkar = ['Dagsetning', 'Vikudagur', 'Hótel', 'Herbergjaflokkur', 'Fjöldi herbergja', 'Verð sýnt', 'Staða']
         st.dataframe(df[syndir_dalkar], use_container_width=True)
 
         st.subheader(f"Verðyfirlit hlið við hlið ({st.session_state['dagar_valdir']} dagar)")
@@ -297,7 +310,7 @@ def main():
             st.dataframe(df_saman_syna[['Dagsetning', 'Vikudagur', 'Meðalverð', 'Vegið meðalverð']], use_container_width=True, hide_index=True)
 
             st.subheader("Verðþróun")
-            fig1 = px.bar(df, x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group', hover_data=['Vikudagur'])
+            fig1 = px.bar(df, x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group', hover_data=['Vikudagur', 'Herbergjaflokkur'])
             fig1.add_scatter(x=df_saman['Dagsetning'], y=df_saman['Venjulegt'], mode='lines+markers', name='Meðalverð', line=dict(color='black', dash='dash', width=2))
             fig1.add_scatter(x=df_saman['Dagsetning'], y=df_saman['Vegið'], mode='lines+markers', name='Vegið meðalverð', line=dict(color='red', width=3))
             fig1.update_yaxes(rangemode="tozero")
@@ -421,15 +434,10 @@ def main():
             st.markdown("""
             **Hvernig hugsar Verðstefnan?**
             * 🔴 **Hækka verð strax!** (Nýting komin yfir 80% EN þú ert ódýrari en markaðurinn).
-              * *Hugsunin:* Hótelið þitt er að fyllast, sennilega af því að þú ert ódýrastur. Markaðurinn þolir hærra verð, svo þú átt að hækka þitt verð strax á síðustu herbergjunum til að græða meira á þeim (hámarka ADR/RevPAR).
             * 🟢 **Sterk staða - Halda verði** (Nýting yfir 80% OG þú ert dýrari en markaðurinn).
-              * *Hugsunin:* Þú ert að ná að fylla hótelið þótt þú sért á hærra verði en hinir. Frábært starf! Ekki breyta neinu.
             * 🔵 **Lækka verð / Búa til tilboð** (Nýting undir 40% OG þú ert dýrari en markaðurinn).
-              * *Hugsunin:* Það er lítið að gera hjá þér og gestirnir eru frekar að bóka hjá keppinautunum af því að þeir eru ódýrari. Þú þarft að lækka verðið (eða setja upp Flash Deal) til að stela bókunum til baka.
             * 🟡 **Ódýr, en engin sala.** (Nýting undir 40% EN þú ert samt ódýrari en markaðurinn).
-              * *Hugsunin:* Það er dautt yfir öllu. Þótt þú sért ódýrastur er enginn að bóka. Að lækka verðið enn meira mun líklega ekki virka (eftirspurnin er bara ekki til staðar). Betra er að reyna að lokka fólk með aukaverðmætum (t.d. "Frír morgunmatur" eða "Late check-out") frekar en að rústa verðstefnunni þinni.
             * 🟡 **Fylgjast með markaði** (Allt þar á milli).
-              * *Hugsunin:* Nýting er venjuleg (40-79%). Bókanir eru að rúlla inn á eðlilegum hraða. Bara leyfa þessu að malla og fylgjast með.
             """)
 
             # ==========================================
@@ -523,7 +531,7 @@ def main():
                 df_pivot_excel = df_pivot_excel.drop(columns=['Dagsetning_obj']).set_index(['Dagsetning', 'Vikudagur'])
                 df_pivot_excel.to_excel(writer, sheet_name='Verðfylki (Matrix)')
                 
-                gogn_ut = df[['Dagsetning_obj', 'Vikudagur', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
+                gogn_ut = df[['Dagsetning_obj', 'Vikudagur', 'Hótel', 'Herbergjaflokkur', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
                 gogn_ut.rename(columns={'Dagsetning_obj': 'Dagsetning'}, inplace=True)
                 gogn_ut['Dagsetning'] = pd.to_datetime(gogn_ut['Dagsetning']).dt.date 
                 gogn_ut.to_excel(writer, sheet_name='Öll gögn (Hrá)', index=False)
