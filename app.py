@@ -10,7 +10,7 @@ import io
 st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
 
 # ==========================================
-# LYKILORÐSKERFI
+# LYKILORÐSKERFI OG UPPHAFIÐ
 # ==========================================
 def athuga_lykilord():
     def lykilord_slegid_inn():
@@ -36,7 +36,8 @@ def athuga_lykilord():
 # API GAGNASÖFNUN
 # ==========================================
 def saekja_raungogn(hotel_dict, fjoldi_daga):
-    API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6"
+    # HÉR SETTURÐU INN NÝJA LYKILINN ÞINN EF ÞÚ ERT BÚIN(N) AÐ UPPAFÆRA!
+    API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6" 
     idag = datetime.date.today()
     gogn = []
     
@@ -60,8 +61,6 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
             dest_id = data_loc[0].get("dest_id")
             search_type = data_loc[0].get("dest_type", "city") 
             fundid_nafn = data_loc[0].get("name", hotel)
-            
-            st.info(f"📍 Tengdi '{hotel}' við: **{fundid_nafn}**")
             
             for i in range(fjoldi_daga):
                 checkin_dagur = idag + datetime.timedelta(days=i)
@@ -94,7 +93,6 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
                         
                         if verd_listi:
                             verd = min(verd_listi) 
-                
                 else:
                     url_api = "https://apidojo-booking-v1.p.rapidapi.com/properties/list"
                     qs_api = {
@@ -128,7 +126,7 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
                 })
                     
         except Exception as e:
-            st.error(f"Villa við að tengjast API fyrir {hotel}: {e}")
+            st.error(f"Villa við að tengjast API fyrir {hotel}. API kvóti gæti verið búinn. (Villa: {e})")
             
     return pd.DataFrame(gogn)
 
@@ -136,37 +134,69 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
 # AÐAL FORRITIÐ
 # ==========================================
 def main():
-    st.title("🏨 Hótelstjórinn markaðsverð")
+    # 1. ATHUGUM HVORT "MITT HÓTEL" SÉ SKRÁÐ
+    if "mitt_hotel_nafn" not in st.session_state:
+        st.session_state["mitt_hotel_nafn"] = ""
+        st.session_state["mitt_hotel_herb"] = 0
 
-    if 'valin_hotel' not in st.session_state or isinstance(st.session_state['valin_hotel'], list):
-        st.session_state['valin_hotel'] = {}
+    if st.session_state["mitt_hotel_nafn"] == "":
+        st.title("🏨 Velkomin(n) - Skráðu þitt hótel")
+        st.write("Til að kerfið geti búið til réttar verðvísitölur og samanburðarskýrslur, byrjaðu á að skrá þitt eigið hótel.")
+        
+        m_nafn = st.text_input("Nafn á þínu hóteli (Eins og það heitir á Booking.com)")
+        m_herb = st.number_input("Fjöldi herbergja á þínu hóteli", min_value=1, value=50, step=1)
+        
+        if st.button("Áfram á Mælaborð", type="primary"):
+            if m_nafn:
+                st.session_state["mitt_hotel_nafn"] = m_nafn
+                st.session_state["mitt_hotel_herb"] = m_herb
+                st.rerun()
+            else:
+                st.warning("Þú verður að skrifa nafn á hótelinu þínu.")
+        return # Stoppar keyrslu hér þar til hótelið er skráð.
 
-    st.sidebar.header("Leit")
+    # 2. MÆLABORÐIÐ HEFST
+    st.title("📊 Hótelstjórinn - Verðvaktin")
+
+    if 'keppinautar' not in st.session_state or isinstance(st.session_state['keppinautar'], list):
+        st.session_state['keppinautar'] = {}
+
+    st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}** ({st.session_state['mitt_hotel_herb']} herb.)")
+    if st.sidebar.button("Breyta mínu hóteli"):
+        st.session_state["mitt_hotel_nafn"] = ""
+        st.rerun()
+        
+    st.sidebar.markdown("---")
+    st.sidebar.header("Leit að Keppinautum")
     
-    nytt_hotel = st.sidebar.text_input("Nafn á gististað")
-    herbergjafjoldi = st.sidebar.number_input("Fjöldi herbergja á þessu hóteli", min_value=1, value=20, step=1)
+    nyr_keppinautur = st.sidebar.text_input("Nafn á keppinauti")
+    kepp_herb = st.sidebar.number_input("Fjöldi herbergja (Keppinautur)", min_value=1, value=20, step=1)
     
-    if st.sidebar.button("Bæta við á lista"):
-        if nytt_hotel and nytt_hotel not in st.session_state['valin_hotel']:
-            st.session_state['valin_hotel'][nytt_hotel] = herbergjafjoldi
-            st.rerun()
+    if st.sidebar.button("Bæta við keppinauti"):
+        if nyr_keppinautur and nyr_keppinautur not in st.session_state['keppinautar']:
+            # Pössum að notandi bæti ekki sjálfum sér við sem keppinauti
+            if nyr_keppinautur.lower() != st.session_state['mitt_hotel_nafn'].lower():
+                st.session_state['keppinautar'][nyr_keppinautur] = kepp_herb
+                st.rerun()
+            else:
+                st.sidebar.error("Þú getur ekki sett þitt eigið hótel sem keppinaut.")
 
-    if len(st.session_state['valin_hotel']) > 0:
-        st.sidebar.markdown("### Valdir gististaðir:")
-        for hotel, f in st.session_state['valin_hotel'].items():
-            st.sidebar.markdown(f"- **{hotel}** ({f} herb.)")
+    if len(st.session_state['keppinautar']) > 0:
+        st.sidebar.markdown("### Valdir keppinautar:")
+        for k_hotel, k_f in st.session_state['keppinautar'].items():
+            st.sidebar.markdown(f"- **{k_hotel}** ({k_f} herb.)")
             
-        if st.sidebar.button("Hreinsa allan lista"):
-            st.session_state['valin_hotel'] = {}
+        if st.sidebar.button("Hreinsa keppinauta"):
+            st.session_state['keppinautar'] = {}
             st.rerun()
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        btn_1 = st.button("Sækja verð markaðar núna")
+        btn_1 = st.button("Sækja verð núna")
     with col2:
-        btn_7 = st.button("Sækja verð markaðar næstu 7 daga")
+        btn_7 = st.button("Sækja verð næstu 7 daga")
     with col3:
-        btn_30 = st.button("Sækja verð markaðar næstu 30 daga")
+        btn_30 = st.button("Sækja verð næstu 30 daga", type="primary")
 
     dagar_valdir = 0
     if btn_1: dagar_valdir = 1
@@ -174,139 +204,146 @@ def main():
     elif btn_30: dagar_valdir = 30
 
     if dagar_valdir > 0:
-        if len(st.session_state['valin_hotel']) > 0:
-            st.success(f"Sæki raungögn af Booking fyrir **{len(st.session_state['valin_hotel'])}** gististaði í **{dagar_valdir}** daga. Bíddu andartak...")
+        if len(st.session_state['keppinautar']) > 0:
+            st.success(f"Sæki markaðsgögn fyrir þig og {len(st.session_state['keppinautar'])} keppinauta í {dagar_valdir} daga...")
             
-            df = saekja_raungogn(st.session_state['valin_hotel'], dagar_valdir) 
+            # Setjum Mitt hótel og Keppinauta saman í einn lista fyrir API leitina
+            leitargogn = {st.session_state['mitt_hotel_nafn']: st.session_state['mitt_hotel_herb']}
+            leitargogn.update(st.session_state['keppinautar'])
+            
+            df = saekja_raungogn(leitargogn, dagar_valdir) 
 
             if not df.empty:
                 df['Staða'] = np.where(df['Verð (ISK)'] > 0, 'Laust', 'Uppselt')
                 df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)'], errors='coerce').fillna(0).astype(int)
-                
-                df['Verð sýnt'] = df['Verð (ISK)'].apply(
-                    lambda x: f"{x:,}".replace(",", ".") if x > 0 else ""
-                )
-                
                 df['Dagsetning'] = pd.to_datetime(df['Dagsetning_obj']).dt.strftime("%d.%m")
-                df.index = np.arange(1, len(df) + 1)
-
-                st.subheader(f"Verðyfirlit ({dagar_valdir} dagar)")
-                syndir_dalkar = ['Dagsetning', 'Hótel', 'Fjöldi herbergja', 'Verð sýnt', 'Staða']
-                st.dataframe(df[syndir_dalkar], use_container_width=True)
-
-                st.subheader("Meðalverð markaðar (Venjulegt vs. Vegið)")
+                
+                mitt_nafn = st.session_state['mitt_hotel_nafn']
                 df_laust = df[df['Verð (ISK)'] > 0].copy()
                 
                 if not df_laust.empty:
-                    df_medaltal = df_laust.groupby('Dagsetning')['Verð (ISK)'].mean().reset_index()
-                    df_medaltal.rename(columns={'Verð (ISK)': 'Venjulegt'}, inplace=True)
-
-                    df_laust['Verð_Vægi'] = df_laust['Verð (ISK)'] * df_laust['Fjöldi herbergja']
-                    df_veg = df_laust.groupby('Dagsetning').agg(
-                        Summa_Verð_Vægi=('Verð_Vægi', 'sum'),
-                        Summa_Herbergi=('Fjöldi herbergja', 'sum')
-                    ).reset_index()
-                    df_veg['Vegið'] = df_veg['Summa_Verð_Vægi'] / df_veg['Summa_Herbergi']
-
-                    df_saman = pd.merge(df_medaltal, df_veg[['Dagsetning', 'Vegið']], on='Dagsetning')
-                    df_saman['Venjulegt'] = df_saman['Venjulegt'].round(0).astype(int)
-                    df_saman['Vegið'] = df_saman['Vegið'].round(0).astype(int)
-
-                    df_saman['Meðalverð'] = df_saman['Venjulegt'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
-                    df_saman['Vegið meðalverð'] = df_saman['Vegið'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
+                    # Skiljum að "Mitt hótel" og "Keppinauta"
+                    df_mitt = df_laust[df_laust['Hótel'] == mitt_nafn].copy()
+                    df_kepp = df_laust[df_laust['Hótel'] != mitt_nafn].copy()
                     
-                    df_saman.index = np.arange(1, len(df_saman) + 1)
+                    # Reiknum vegið meðalverð keppinauta
+                    if not df_kepp.empty:
+                        df_kepp['Verð_Vægi'] = df_kepp['Verð (ISK)'] * df_kepp['Fjöldi herbergja']
+                        df_veg = df_kepp.groupby('Dagsetning').agg(
+                            Summa_Verð_Vægi=('Verð_Vægi', 'sum'),
+                            Summa_Herbergi=('Fjöldi herbergja', 'sum')
+                        ).reset_index()
+                        df_veg['Keppinautar_Meðalverð'] = (df_veg['Summa_Verð_Vægi'] / df_veg['Summa_Herbergi']).round(0).astype(int)
+                    else:
+                        df_veg = pd.DataFrame(columns=['Dagsetning', 'Keppinautar_Meðalverð'])
                     
-                    syndir_dalkar_saman = ['Dagsetning', 'Meðalverð', 'Vegið meðalverð']
-                    st.dataframe(df_saman[syndir_dalkar_saman], use_container_width=True)
+                    # Tökum verðið mitt
+                    if not df_mitt.empty:
+                        df_mitt_einfalt = df_mitt[['Dagsetning', 'Verð (ISK)']].rename(columns={'Verð (ISK)': 'Mitt_Verð'})
+                    else:
+                        df_mitt_einfalt = pd.DataFrame(columns=['Dagsetning', 'Mitt_Verð'])
 
-                    st.subheader("Verðþróun")
-                    fig = px.bar(df, x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group')
+                    # Sameinum í eina skýrslu
+                    df_skyrsla = pd.merge(df_veg[['Dagsetning', 'Keppinautar_Meðalverð']], df_mitt_einfalt, on='Dagsetning', how='outer').fillna(0)
                     
-                    fig.add_scatter(
-                        x=df_saman['Dagsetning'], y=df_saman['Venjulegt'], 
-                        mode='lines+markers', name='Meðalverð', 
-                        line=dict(color='black', dash='dash', width=2)
+                    # REIKNUM VERÐVÍSITÖLU (PRICE INDEX)
+                    # Vísitala > 100 þýðir að þú ert dýrari en markaðurinn. Vísitala < 100 þýðir að þú ert ódýrari.
+                    df_skyrsla['Verðvísitala (%)'] = np.where(
+                        (df_skyrsla['Keppinautar_Meðalverð'] > 0) & (df_skyrsla['Mitt_Verð'] > 0),
+                        ((df_skyrsla['Mitt_Verð'] / df_skyrsla['Keppinautar_Meðalverð']) * 100).round(1),
+                        0
                     )
+
+                    st.markdown("---")
+                    st.subheader("📈 Samanburður við Markaðinn")
                     
-                    fig.add_scatter(
-                        x=df_saman['Dagsetning'], y=df_saman['Vegið'], 
-                        mode='lines+markers', name='Vegið meðalverð', 
-                        line=dict(color='red', width=3)
-                    )
+                    # Gerum línurit þar sem bara Mitt Hótel og Vegið Meðalverð sjást
+                    fig = px.line(df_skyrsla, x='Dagsetning', y=['Mitt_Verð', 'Keppinautar_Meðalverð'], 
+                                  labels={'value': 'Verð (ISK)', 'variable': 'Viðmið'},
+                                  color_discrete_map={'Mitt_Verð': '#1f77b4', 'Keppinautar_Meðalverð': '#d62728'})
+                    
+                    fig.update_traces(mode='lines+markers', line=dict(width=3))
+                    # Látum keppinauta línu vera stílaða aðeins öðruvísi (brotin lína stundum sniðugt en höldum solid núna)
+                    fig.data[1].line.dash = 'dash'
+                    fig.data[0].name = "Mitt Hótel"
+                    fig.data[1].name = "Vegið Meðalverð Keppinauta"
                     
                     fig.update_yaxes(rangemode="tozero")
                     st.plotly_chart(fig, use_container_width=True)
+
+                    st.subheader("📋 Samkeppnisvísitala (Price Index)")
                     
+                    # Snyrtum framsetningu áður en við sýnum í töflu
+                    df_syna = df_skyrsla.copy()
+                    df_syna['Mitt Verð'] = df_syna['Mitt_Verð'].apply(lambda x: f"{int(x):,} ISK".replace(",", ".") if x > 0 else "Uppselt")
+                    df_syna['Keppinautar (Vegið)'] = df_syna['Keppinautar_Meðalverð'].apply(lambda x: f"{int(x):,} ISK".replace(",", ".") if x > 0 else "Uppselt")
+                    df_syna['Verðvísitala'] = df_syna['Verðvísitala (%)'].apply(lambda x: f"{x}%" if x > 0 else "-")
+                    
+                    st.dataframe(df_syna[['Dagsetning', 'Mitt Verð', 'Keppinautar (Vegið)', 'Verðvísitala']], use_container_width=True)
+                    
+                    # Bætum við snjallri ábendingu!
+                    if not df_skyrsla.empty and df_skyrsla['Verðvísitala (%)'].mean() > 0:
+                        medaltal_visitala = df_skyrsla[df_skyrsla['Verðvísitala (%)'] > 0]['Verðvísitala (%)'].mean()
+                        if medaltal_visitala < 95:
+                            st.info(f"💡 **Ábending:** Þú ert að meðaltali á **{medaltal_visitala:.1f}%** af markaðsverði. Þú gætir átt inni hækkun!")
+                        elif medaltal_visitala > 105:
+                            st.warning(f"💡 **Ábending:** Þú ert að meðaltali á **{medaltal_visitala:.1f}%** af markaðsverði. Þú ert talsvert dýrari en keppinautarnir.")
+                        else:
+                            st.success(f"💡 **Ábending:** Þú ert á **{medaltal_visitala:.1f}%** vísitölu. Þú ert algjörlega í takti við markaðinn!")
+
                     # ==========================================
-                    # EXCEL NIÐURHAL MEÐ SÚLURITI
+                    # EXCEL NIÐURHAL 
                     # ==========================================
                     st.markdown("---")
                     st.subheader("📥 Sækja skýrslu")
                     
                     output = io.BytesIO()
-                    
                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        # FLIPI 1: Öll gögnin
+                        # FLIPI 1: Samanburður (Aðal skýrslan)
+                        skyrsla_ut = df_skyrsla[['Dagsetning', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðvísitala (%)']].copy()
+                        skyrsla_ut.rename(columns={'Mitt_Verð': 'Mitt Hótel (ISK)', 'Keppinautar_Meðalverð': 'Keppinautar Vegið (ISK)'}, inplace=True)
+                        skyrsla_ut.to_excel(writer, sheet_name='Verðvísitala', index=False)
+                        
+                        # Búum til Excel Línurit
+                        workbook = writer.book
+                        worksheet = writer.sheets['Verðvísitala']
+                        chart = workbook.add_chart({'type': 'line'})
+                        max_row = len(skyrsla_ut)
+                        
+                        chart.add_series({
+                            'name':       ['Verðvísitala', 0, 1], 
+                            'categories': ['Verðvísitala', 1, 0, max_row, 0], 
+                            'values':     ['Verðvísitala', 1, 1, max_row, 1], 
+                            'line':       {'color': '#1f77b4', 'width': 2.5} 
+                        })
+                        chart.add_series({
+                            'name':       ['Verðvísitala', 0, 2], 
+                            'categories': ['Verðvísitala', 1, 0, max_row, 0], 
+                            'values':     ['Verðvísitala', 1, 2, max_row, 2], 
+                            'line':       {'color': '#d62728', 'width': 2.5, 'dash_type': 'dash'} 
+                        })
+                        chart.set_title({'name': 'Samanburður við markaðinn'})
+                        worksheet.insert_chart('F2', chart)
+                        
+                        # FLIPI 2: Öll gögnin (Fyrir bakk-up)
                         gogn_ut = df[['Dagsetning_obj', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
                         gogn_ut.rename(columns={'Dagsetning_obj': 'Dagsetning'}, inplace=True)
-                        # Breytum í dagsetningar-format fyrir Excel
-                        gogn_ut['Dagsetning'] = pd.to_datetime(gogn_ut['Dagsetning']).dt.date
-                        gogn_ut.to_excel(writer, sheet_name='Öll gögn', index=False)
-                        
-                        # FLIPI 2: Meðalverð og SÚLURIT
-                        medaltal_ut = df_saman[['Dagsetning', 'Venjulegt', 'Vegið']].copy()
-                        medaltal_ut.rename(columns={'Venjulegt': 'Venjulegt meðalverð', 'Vegið': 'Vegið meðalverð'}, inplace=True)
-                        medaltal_ut.to_excel(writer, sheet_name='Meðalverð Markaðar', index=False)
-                        
-                        # --- Hér búum við til ritið beint inn í Excel ---
-                        workbook = writer.book
-                        worksheet = writer.sheets['Meðalverð Markaðar']
-                        
-                        # Búum til nýtt súlurit ('column' = lóðréttar súlur)
-                        chart = workbook.add_chart({'type': 'column'})
-                        
-                        max_row = len(medaltal_ut)
-                        
-                        # Bætum Venjulega meðalverðinu á grafið
-                        chart.add_series({
-                            'name':       ['Meðalverð Markaðar', 0, 1], # Nafnið er í dálki B, röð 1
-                            'categories': ['Meðalverð Markaðar', 1, 0, max_row, 0], # Dagsetningar í dálki A
-                            'values':     ['Meðalverð Markaðar', 1, 1, max_row, 1], # Tölurnar í dálki B
-                            'fill':       {'color': '#4C78A8'} # Blár litur
-                        })
-                        
-                        # Bætum Vegna meðalverðinu á grafið
-                        chart.add_series({
-                            'name':       ['Meðalverð Markaðar', 0, 2], # Nafnið er í dálki C, röð 1
-                            'categories': ['Meðalverð Markaðar', 1, 0, max_row, 0], # Dagsetningar í dálki A
-                            'values':     ['Meðalverð Markaðar', 1, 2, max_row, 2], # Tölurnar í dálki C
-                            'fill':       {'color': '#E45756'} # Rauður litur
-                        })
-                        
-                        # Stillingar á útlitinu
-                        chart.set_title({'name': 'Meðalverð Markaðar (Súlurit)'})
-                        chart.set_x_axis({'name': 'Dagsetning'})
-                        chart.set_y_axis({'name': 'Verð (ISK)'})
-                        chart.set_size({'width': 720, 'height': 400})
-                        
-                        # Setjum grafið inn á síðuna hægra megin við gögnin (í reit E2)
-                        worksheet.insert_chart('E2', chart)
+                        gogn_ut['Dagsetning'] = pd.to_datetime(gogn_ut['Dagsetning']).dt.date 
+                        gogn_ut.to_excel(writer, sheet_name='Öll gögn (Hrá)', index=False)
                     
                     excel_data = output.getvalue()
                     
                     st.download_button(
-                        label=f"Sækja Excel skýrslu ({dagar_valdir} dagar)",
+                        label=f"Sækja Samanburðarskýrslu ({dagar_valdir} dagar)",
                         data=excel_data,
-                        file_name=f"markadsverd_{dagar_valdir}dagar_{datetime.date.today()}.xlsx",
+                        file_name=f"Samkeppnisvisitala_{datetime.date.today()}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                     
                 else:
-                    st.warning("Ekkert verð fannst (Flettu upp í API svarinu hér að ofan til að sjá ástæðuna).")
+                    st.warning("Ekkert verð fannst (Mögulega er API kvóti uppurinn eða allt uppselt).")
         else:
-            st.error("Þú þarft að bæta við að minnsta kosti einum gististað vinstra megin áður en þú leitar!")
+            st.error("Þú þarft að bæta við að minnsta kosti einum keppinauti vinstra megin áður en þú leitar!")
 
-# Keyrum lykilorðsvörnina Fyrst.
 if athuga_lykilord():
     main()
