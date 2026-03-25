@@ -68,7 +68,7 @@ def athuga_lykilord():
         return True
 
 # ==========================================
-# API GAGNASÖFNUN
+# API GAGNASÖFNUN (MEÐ BOOKING ID)
 # ==========================================
 def saekja_raungogn(hotel_dict, fjoldi_daga):
     API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6" 
@@ -98,14 +98,15 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
                 
                 if isinstance(data_api, list):
                     for room in data_api:
-                        r_name = room.get("room_name", "Standard")
                         if "block" in room:
                             for b in room["block"]:
                                 if "product_price_breakdown" in b:
                                     p = b["product_price_breakdown"]["gross_amount"].get("value", 0)
                                     gogn.append({
-                                        "Dagsetning_obj": checkin, "Hótel": hotel, 
-                                        "Herbergjaflokkur": r_name, "Verð (ISK)": int(p), 
+                                        "Dagsetning_obj": checkin, 
+                                        "Hótel": hotel, 
+                                        "Booking ID": dest_id,
+                                        "Verð (ISK)": int(p), 
                                         "Fjöldi herbergja": herbergi
                                     })
         except Exception as e: st.error(f"Villa hjá {hotel}: {e}")
@@ -132,7 +133,7 @@ def main():
 
     st.title("📊 Hótelstjórinn - Advanced Revenue System")
     
-    # Sidebar
+    # sidebar
     st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}** ({st.session_state['mitt_hotel_herb']} herb.)")
     if st.sidebar.button("Breyta mínu hóteli"):
         st.session_state["mitt_hotel_nafn"] = ""; st.rerun()
@@ -146,6 +147,21 @@ def main():
         save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], "Allir", st.session_state['keppinautar'])
         st.rerun()
 
+    if len(st.session_state['keppinautar']) > 0:
+        st.sidebar.markdown("### Valdir keppinautar:")
+        # Listi með eyðingu
+        kepp_listi = list(st.session_state['keppinautar'].keys())
+        for h_nafn in kepp_listi:
+            col_k1, col_k2 = st.sidebar.columns([4, 1])
+            col_k1.markdown(f"- **{h_nafn}** ({st.session_state['keppinautar'][h_nafn].get('fjoldi', 0)} herb.)")
+            if col_k2.button("🗑️", key=f"del_{h_nafn}"):
+                del st.session_state['keppinautar'][h_nafn]
+                save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], "Allir", st.session_state['keppinautar'])
+                st.rerun()
+
+        if st.sidebar.button("Hreinsa alla keppinauta"):
+            st.session_state['keppinautar'] = {}; save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], "Allir", {}); st.rerun()
+
     c1, c2, c3 = st.columns(3)
     d = 0
     if c1.button("Sækja núna"): d = 1
@@ -153,9 +169,9 @@ def main():
     if c3.button("Sækja 30 daga", type="primary"): d = 30
 
     if d > 0:
-        leitargogn = {st.session_state['mitt_hotel_nafn']: {"fjoldi": st.session_state['mitt_hotel_herb']}}
-        leitargogn.update(st.session_state['keppinautar'])
-        res_df = saekja_raungogn(leitargogn, d)
+        l_gogn = {st.session_state['mitt_hotel_nafn']: {"fjoldi": st.session_state['mitt_hotel_herb']}}
+        l_gogn.update(st.session_state['keppinautar'])
+        res_df = saekja_raungogn(l_gogn, d)
         st.session_state['api_gogn'] = res_df
         st.session_state['dagar_valdir'] = d
         if not res_df.empty:
@@ -166,12 +182,6 @@ def main():
 
     df = st.session_state.get('api_gogn', pd.DataFrame())
     if not df.empty:
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("Sía herbergjaflokka")
-        allir_fl = sorted(df['Herbergjaflokkur'].unique())
-        valdir_fl = st.sidebar.multiselect("Veldu flokka:", allir_fl, default=allir_fl)
-        df = df[df['Herbergjaflokkur'].isin(valdir_fl)].copy()
-
         df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)']).astype(int)
         df['Dagsetning'] = pd.to_datetime(df['Dagsetning_obj']).dt.strftime("%d.%m")
         isl_dagar = {0:'Mán', 1:'Þri', 2:'Mið', 3:'Fim', 4:'Fös', 5:'Lau', 6:'Sun'}
@@ -188,7 +198,7 @@ def main():
 
         # --- AÐAL SÚLURITIÐ (VERÐÞRÓUN) ---
         st.subheader("Verðþróun")
-        fig_main = px.bar(df[df['Verð (ISK)']>0], x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group')
+        fig_main = px.bar(df[df['Verð (ISK)']>0], x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group', hover_data=["Booking ID"])
         st.plotly_chart(fig_main, use_container_width=True)
 
         # --- KPI ÚTREIKNINGAR ---
