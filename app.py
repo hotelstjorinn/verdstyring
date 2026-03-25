@@ -135,7 +135,6 @@ def main():
 
     st.title("📊 Hótelstjórinn - Advanced Revenue System")
     
-    # --- SIDEBAR ---
     st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}**\n- **Fjöldi:** {st.session_state['mitt_hotel_herb']} herb.")
     if st.sidebar.button("Breyta mínu hóteli"):
         st.session_state["mitt_hotel_nafn"] = ""; st.rerun()
@@ -148,13 +147,6 @@ def main():
         st.session_state['keppinautar'][n_k] = {"fjoldi": k_h}
         save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], "Allir", st.session_state['keppinautar'])
         st.rerun()
-
-    if len(st.session_state['keppinautar']) > 0:
-        st.sidebar.markdown("### Valdir keppinautar:")
-        for k_hotel, k_info in st.session_state['keppinautar'].items():
-            st.sidebar.markdown(f"- **{k_hotel}** ({k_info.get('fjoldi', 0)} herb.)")
-        if st.sidebar.button("Hreinsa alla keppinauta"):
-            st.session_state['keppinautar'] = {}; save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], "Allir", {}); st.rerun()
 
     c1, c2, c3 = st.columns(3)
     d = 0
@@ -171,7 +163,7 @@ def main():
         if not res_df.empty:
             try:
                 db.append_rows(res_df.astype(str).values.tolist())
-                st.toast("✅ Gögn vistuð sjálfkrafa!", icon="💾")
+                st.toast("✅ Gögn vistuð sjálfvirkt!", icon="💾")
             except: pass
 
     df = st.session_state.get('api_gogn', pd.DataFrame())
@@ -196,34 +188,29 @@ def main():
                 pivot_syna[col] = pivot_syna[col].apply(lambda x: f"{int(x):,}".replace(",", ".") + " ISK" if pd.notna(x) else "Uppselt")
         st.dataframe(pivot_syna, use_container_width=True, hide_index=True)
 
-        # --- MEÐALVERÐ ---
+        # --- KPI Útreikningar ---
         df_l = df[df['Verð (ISK)'] > 0]
-        med_venj = df_l.groupby('Dagsetning')['Verð (ISK)'].mean().reset_index()
-        df_l['Vægi'] = df_l['Verð (ISK)'] * df_l['Fjöldi herbergja']
-        veg_stats = df_l.groupby('Dagsetning').agg(SV=('Vægi','sum'), SH=('Fjöldi herbergja','sum')).reset_index()
-        veg_stats['Vegið'] = (veg_stats['SV'] / veg_stats['SH']).round(0).astype(int)
-        saman = pd.merge(df[['Dagsetning','Vikudagur']].drop_duplicates(), med_venj, on='Dagsetning')
-        saman = pd.merge(saman, veg_stats[['Dagsetning','Vegið']], on='Dagsetning')
-
-        # --- KPI ---
-        st.markdown("---")
-        st.subheader("⚙️ KPI & Tekjustýring")
         m_nafn = st.session_state['mitt_hotel_nafn']
         df_m = df_l[df_l['Hótel'] == m_nafn].groupby('Dagsetning')['Verð (ISK)'].mean().reset_index().rename(columns={'Verð (ISK)':'Mitt_V'})
         df_k = df_l[df_l['Hótel'] != m_nafn].copy()
         df_k['Vægi'] = df_k['Verð (ISK)'] * df_k['Fjöldi herbergja']
         k_avg = df_k.groupby('Dagsetning').agg(SV=('Vægi','sum'), SH=('Fjöldi herbergja','sum')).reset_index()
         k_avg['Markad_V'] = (k_avg['SV']/k_avg['SH']).round(0).fillna(0)
-        kpi_base = pd.merge(df_m, k_avg[['Dagsetning','Markad_V']], on='Dagsetning', how='outer').fillna(0)
-        kpi_base['Vísitala (%)'] = np.where(kpi_base['Markad_V']>0, (kpi_base['Mitt_V']/kpi_base['Markad_V']*100).round(1), 0)
         
+        kpi_base = pd.merge(df_m, k_avg[['Dagsetning','Markad_V']], on='Dagsetning', how='outer').fillna(0)
+        kpi_base['Vísitala (%)'] = np.where(kpi_base['Markad_V']>0, (kpi_base['Mitt_V']/kpi_base['Markad_V']*100).round(0).astype(int), 0)
+        kpi_base['Verðmismunur (ISK)'] = (kpi_base['Mitt_V'] - kpi_base['Markad_V']).round(0).astype(int)
+
         if 'Seld_herb' not in st.session_state or len(st.session_state['Seld_herb']) != len(kpi_base):
             st.session_state['Seld_herb'] = [0] * len(kpi_base)
         kpi_base['Seld herbergi'] = st.session_state['Seld_herb']
+        
+        st.markdown("---")
+        st.subheader("⚙️ KPI & Tekjustýring")
         kpi_edit = st.data_editor(kpi_base, hide_index=True, use_container_width=True)
         st.session_state['Seld_herb'] = kpi_edit['Seld herbergi'].tolist()
-        kpi_edit['Nýting (%)'] = (kpi_edit['Seld herbergi'] / st.session_state['mitt_hotel_herb'] * 100).round(1)
-        kpi_edit['RevPAR'] = (kpi_edit['Mitt_V'] * kpi_edit['Nýting (%)'] / 100).astype(int)
+        kpi_edit['Nýting (%)'] = (kpi_edit['Seld herbergi'] / st.session_state['mitt_hotel_herb'] * 100).round(0).astype(int)
+        kpi_edit['RevPAR'] = (kpi_edit['Mitt_V'] * kpi_edit['Nýting (%)'] / 100).round(0).astype(int)
         
         def stefna(r):
             if r['Nýting (%)'] >= 80 and r['Vísitala (%)'] < 100: return "🔴 Hækka verð strax!"
@@ -236,8 +223,7 @@ def main():
         # 🚀 RMS ÍTARLEGAR SKÝRSLUR
         # ==========================================
         st.markdown("---")
-        st.header("🚀 RMS Ítarlegar Skýrslur (Advanced System)")
-        
+        st.header("🚀 RMS Ítarlegar Skýrslur")
         rms_tabs = st.tabs([
             "1. Pricing Calendar", "2. Demand vs Price", "3. Elasticity", 
             "4. Pace vs Price", "5. Group Displacement", "6. Revenue Opportunity", 
@@ -245,62 +231,46 @@ def main():
         ])
         
         with rms_tabs[0]:
-            st.subheader("📅 Pricing Calendar (Dýnamískt Verðdagatal)")
-            # Sýnir Mitt Verð, Nýtingu og RevPAR hlið við hlið í dalkum
-            cal_df = kpi_edit[['Dagsetning', 'Mitt_V', 'Nýting (%)', 'RevPAR']].copy()
-            cal_df.columns = ['Dags', 'Verð (ISK)', 'Nýting (%)', 'RevPAR (ISK)']
-            st.dataframe(cal_df, use_container_width=True, hide_index=True)
+            st.subheader("📅 Pricing Calendar")
+            cal_view = kpi_edit[['Dagsetning', 'Mitt_V', 'Nýting (%)', 'RevPAR']].copy()
+            cal_view['Mitt_V'] = cal_view['Mitt_V'].round(0).astype(int)
+            st.dataframe(cal_view, use_container_width=True, hide_index=True)
             
         with rms_tabs[1]:
-            st.subheader("📊 Demand vs Price (Demand Curve)")
-            # Breytt í súlurit eins og óskað var eftir
-            fig_demand = px.bar(kpi_edit, x="Nýting (%)", y="Mitt_V", color="Dagsetning", 
-                                title="Eftirspurn vs. Verðlagning", labels={"Mitt_V":"Verð (ADR)"})
+            st.subheader("📊 Demand vs Price")
+            fig_demand = px.bar(kpi_edit, x="Nýting (%)", y="Mitt_V", color="Dagsetning", title="Eftirspurn vs. Verð")
             st.plotly_chart(fig_demand, use_container_width=True)
             
         with rms_tabs[2]:
-            st.subheader("🧪 Price Elasticity Skýrsla")
-            st.write("Sýnir hvernig breyting á verði hefur áhrif á nýtingu.")
-            elasticity_df = kpi_edit[['Dagsetning', 'Vísitala (%)', 'Nýting (%)']].copy()
-            st.line_chart(elasticity_df.set_index('Dagsetning'))
+            st.subheader("🧪 Price Elasticity")
+            st.line_chart(kpi_edit.set_index('Dagsetning')[['Vísitala (%)', 'Nýting (%)']])
 
         with rms_tabs[3]:
             st.subheader("🏎️ Booking Pace vs Price")
-            st.write("Sýnir ADR (verð) í samhengi við seld herbergi.")
-            fig_pace = px.scatter(kpi_edit, x="Mitt_V", y="Seld herbergi", size="Nýting (%)", color="Dagsetning")
-            st.plotly_chart(fig_pace, use_container_width=True)
+            st.plotly_chart(px.scatter(kpi_edit, x="Mitt_V", y="Seld herbergi", size="Nýting (%)", color="Dagsetning"), use_container_width=True)
 
         with rms_tabs[4]:
-            st.subheader("👥 Group Displacement Analysis")
-            st.write("Greining á því hvort hópur borgi sig miðað við einstaklingssölu.")
-            disp_df = kpi_edit[['Dagsetning', 'RevPAR']].copy()
-            disp_df['Lágmarksverð Hóps'] = (disp_df['RevPAR'] * 1.1).astype(int) # Einföld RMS rökfræði
-            st.dataframe(disp_df, use_container_width=True, hide_index=True)
+            st.subheader("👥 Group Displacement")
+            disp = kpi_edit[['Dagsetning', 'RevPAR']].copy()
+            disp['Min Group Rate'] = (disp['RevPAR'] * 1.1).round(0).astype(int)
+            st.dataframe(disp, use_container_width=True, hide_index=True)
 
         with rms_tabs[5]:
             st.subheader("💎 Revenue Opportunity")
-            st.write("Tekjur sem töpuðust vegna rangrar verðlagningar eða takmarkana.")
-            opp_df = kpi_edit[['Dagsetning', 'Mismunur']].copy()
-            opp_df['Töpuð tækifæri'] = np.where(opp_df['Mismunur'] < 0, opp_df['Mismunur'].abs(), 0)
-            st.bar_chart(opp_df.set_index('Dagsetning')['Töpuð tækifæri'])
+            opp_df = kpi_edit[['Dagsetning', 'Verðmismunur (ISK)']].copy()
+            opp_df['Tækifæri'] = opp_df['Verðmismunur (ISK)'].apply(lambda x: abs(x) if x < 0 else 0).round(0).astype(int)
+            st.bar_chart(opp_df.set_index('Dagsetning')['Tækifæri'])
 
         with rms_tabs[6]:
-            st.subheader("🌐 Channel Pricing Performance")
-            st.write("Áætluð nýting og verð dreift á rásir.")
-            channel_df = pd.DataFrame({
-                "Rás": ["Booking.com", "Expedia", "Direct (Vefur)", "Corporate"],
-                "Hlutfall (%)": [45, 15, 30, 10],
-                "Nettó ADR": [kpi_edit['Mitt_V'].mean() * 0.85, kpi_edit['Mitt_V'].mean() * 0.82, kpi_edit['Mitt_V'].mean(), kpi_edit['Mitt_V'].mean() * 0.9]
-            })
-            st.table(channel_df)
+            st.subheader("🌐 Channel Performance")
+            st.write("Áætluð ADR dreifing")
+            st.table(pd.DataFrame({"Rás": ["Booking", "Expedia", "Direct"], "ADR": [(kpi_edit['Mitt_V'].mean()*0.85).astype(int), (kpi_edit['Mitt_V'].mean()*0.82).astype(int), kpi_edit['Mitt_V'].mean().astype(int)]}))
 
         with rms_tabs[7]:
-            st.subheader("🤖 AI Pricing Recommendations (Öll tímabil)")
-            # Sýnir alla valda daga (1, 7 eða 30)
-            ai_recs = kpi_edit.copy()
-            ai_recs['Rökstuðningur'] = np.where(ai_recs['Aðgerð'].str.contains('🔴'), "Markaður er dýr og nýting há. Hækkaðu!", 
-                                       np.where(ai_recs['Aðgerð'].str.contains('🔵'), "Nýting lág og þú ert of dýr. Lækkaðu!", "Staðan er góð."))
-            st.dataframe(ai_recs[['Dagsetning', 'Mitt_V', 'Aðgerð', 'Rökstuðningur']], use_container_width=True, hide_index=True)
+            st.subheader("🤖 AI Recommendations")
+            ai_view = kpi_edit.copy()
+            ai_view['Rökstuðningur'] = np.where(ai_view['Aðgerð'].str.contains('🔴'), "Há nýting & lágt verð", "Fylgjast með markaði")
+            st.dataframe(ai_view[['Dagsetning', 'Mitt_V', 'Aðgerð', 'Rökstuðningur']], use_container_width=True, hide_index=True)
 
         # --- EXCEL ---
         out = io.BytesIO()
