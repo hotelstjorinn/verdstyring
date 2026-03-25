@@ -10,6 +10,48 @@ import requests
 import io
 import os
 
+st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
+
+# ==========================================
+# CUSTOM CSS FYRIR MOBILE & TABLET (NÝTT!)
+# ==========================================
+st.markdown("""
+<style>
+/* CSS Fyrir skjái minni en 768px (Símar og spjaldtölvur) */
+@media (max-width: 768px) {
+    /* Stækka takka svo það sé auðvelt að smella með putta */
+    .stButton>button {
+        width: 100%;
+        height: 50px;
+        font-weight: bold;
+    }
+    
+    /* Minnka letur í töflum svo þær passi betur á skjáinn */
+    .stDataFrame {
+        font-size: 12px;
+    }
+    
+    /* Minnka spássíur til að nýta plássið betur */
+    .block-container {
+        padding-top: 2rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    
+    /* Laga stærð á 'Hótelstjórinn' titlinum */
+    h1 {
+        font-size: 24px !important;
+    }
+    h2 {
+        font-size: 20px !important;
+    }
+    h3 {
+        font-size: 18px !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- TENGING VIÐ GAGNAGRUNN ---
 try:
     key_dict = json.loads(st.secrets["google_credentials"])
@@ -20,8 +62,6 @@ try:
     st.sidebar.success("🟢 Tenging við gagnagrunn virk!")
 except Exception as e:
     st.sidebar.error(f"🔴 Gat ekki tengst gagnagrunni: {e}")
-
-st.set_page_config(page_title="Hótelstjórinn markaðsverð", layout="wide")
 
 # ==========================================
 # VISTUNAR KERFI
@@ -114,7 +154,7 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
     return pd.DataFrame(gogn)
 
 # ==========================================
-# AÐAL FORRITIÐ
+# MAIN APP
 # ==========================================
 def main():
     v_stilla = load_settings() or {}
@@ -203,7 +243,6 @@ def main():
 
         # --- AÐAL SÚLURITIÐ (VERÐÞRÓUN) ---
         st.subheader("Verðþróun (Súlurit)")
-        # Hér kemur Booking ID fram í hover_data
         fig_main = px.bar(df[df['Verð (ISK)']>0], x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group', hover_data=["Booking ID"])
         st.plotly_chart(fig_main, use_container_width=True)
 
@@ -238,7 +277,6 @@ def main():
         kpi_edit = st.data_editor(kpi_base, hide_index=True, use_container_width=True)
         st.session_state['Seld_herb'] = kpi_edit['Seld herbergi'].tolist()
         
-        # Allt formattað sem INT (heilar tölur)
         kpi_edit['Nýting (%)'] = (kpi_edit['Seld herbergi'] / st.session_state['mitt_hotel_herb'] * 100).round(0).astype(int)
         kpi_edit['RevPAR'] = (kpi_edit['Mitt_V'] * kpi_edit['Nýting (%)'] / 100).round(0).astype(int)
         
