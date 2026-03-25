@@ -1,5 +1,26 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
+import json
+
+# --- TENGING VIÐ GAGNAGRUNN ---
+try:
+    # 1. Sækja lykilinn úr leynihólfinu hjá Streamlit
+    key_dict = json.loads(st.secrets["google_credentials"])
+    
+    # 2. Auðkenna og tengjast Google
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
+    client = gspread.authorize(creds)
+    
+    # 3. Opna skjalið
+    db = client.open("Hotel_Pace_DB").sheet1
+    st.sidebar.success("🟢 Tenging við gagnagrunn virk!")
+
+except Exception as e:
+    st.sidebar.error(f"🔴 Gat ekki tengst gagnagrunni: {e}")
+# ------------------------------
 import numpy as np
 import plotly.express as px
 import datetime
