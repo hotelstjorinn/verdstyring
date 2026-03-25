@@ -68,7 +68,7 @@ def athuga_lykilord():
         return True
 
 # ==========================================
-# API GAGNASÖFNUN (SJÁLFVIRKAR TÝPUR)
+# API GAGNASÖFNUN
 # ==========================================
 def saekja_raungogn(hotel_dict, fjoldi_daga):
     API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6" 
@@ -240,8 +240,15 @@ def main():
         kpi_edit['Aðgerð'] = kpi_edit.apply(stefna, axis=1)
         st.dataframe(kpi_edit[['Dagsetning','Seld herbergi','Nýting (%)','RevPAR','Aðgerð']], use_container_width=True, hide_index=True)
         
+        st.markdown("""
+        **Skýringar á aðgerðum:**
+        * 🔴 **Hækka verð strax!**: Nýting > 80% en þú ert ódýrari en markaðurinn.
+        * 🔵 **Lækka verð**: Nýting < 40% og þú ert yfir 105% af markaðsverði.
+        * 🟡 **Fylgjast með**: Staðan er í jafnvægi.
+        """)
+
         # ==========================================
-        # 🚀 RMS ÍTARLEGAR SKÝRSLUR (NÝTT)
+        # 🚀 RMS ÍTARLEGAR SKÝRSLUR
         # ==========================================
         st.markdown("---")
         st.header("🚀 RMS Ítarlegar Skýrslur")
@@ -254,57 +261,53 @@ def main():
         
         with rms_tabs[0]:
             st.subheader("📅 Pricing Calendar (Verðdagatal)")
-            st.write("Þetta er þitt helsta vinnutæki.")
             st.info("Sýnir: Verð per dag, Nýtingu (OTB), Pickup og Forecast demand.")
-            # Hér gæti komið ítarlegra dagatal seinna
             
         with rms_tabs[1]:
             st.subheader("📈 Demand vs Price (Demand Curve)")
             st.write("Svarar: *Hversu hátt get ég farið án þess að missa bókanir?*")
-            st.plotly_chart(px.scatter(kpi_edit, x="Nýting (%)", y="Mitt_V", trendline="ols", title="Eftirspurnarferill"), use_container_width=True)
+            # Fjarlægði trendline til að koma í veg fyrir hrun vegna statsmodels
+            st.plotly_chart(px.scatter(kpi_edit, x="Nýting (%)", y="Mitt_V", title="Eftirspurnarferill"), use_container_width=True)
             
         with rms_tabs[2]:
             st.subheader("🧪 Price Elasticity Skýrsla")
-            st.write("Sýnir hvernig bókanir breytast þegar verð breytist.")
             st.info("Hversu viðkvæmur er markaðurinn fyrir verðbreytingum?")
 
         with rms_tabs[3]:
             st.subheader("🏎️ Booking Pace vs Price")
-            st.write("Sameinar pickup og verð. Er ég of ódýr eða of dýr?")
+            st.write("Er ég of ódýr eða of dýr?")
 
         with rms_tabs[4]:
             st.subheader("🕵️ Competitor Pricing (Rate Shopping)")
-            st.write("Þitt verð vs. samkeppni. Ranking: Cheapest → Most Expensive.")
             st.dataframe(pivot_syna, use_container_width=True)
 
         with rms_tabs[5]:
-            st.subheader("👥 Displacement Analysis")
-            st.write("Fyrir hópa: Á ég að taka þennan hóp eða selja herbergin dýrari stökum gestum?")
+            st.subheader("👥 Group Displacement Analysis")
+            st.write("Á ég að taka þennan hóp eða selja herbergin dýrari stökum gestum?")
 
         with rms_tabs[6]:
-            st.subheader("💎 Revenue Opportunity / Unconstrained Demand")
+            st.subheader("💎 Revenue Opportunity")
             st.write("Hvað gætir þú hafa selt ef þú værir ekki uppbókaður?")
 
         with rms_tabs[7]:
             st.subheader("🔲 Price vs Occupancy Matrix")
             st.table(pd.DataFrame({
                 "Nýting": ["<30%", "30-70%", "70-90%", ">90%"],
-                "Aðgerð": ["Lágmarksverð / Tilboð", "Fylgjast með markaði", "Hækka verð jafnt og þétt", "Maximize - Hæsta mögulega verð"]
+                "Aðgerð": ["Lágmarksverð", "Fylgjast með", "Hækka verð", "Maximize"]
             }))
 
         with rms_tabs[8]:
             st.subheader("🌐 Channel Pricing Performance")
-            st.write("Booking.com vs. Direct vs. Expedia. Er ég að selja of ódýrt í OTA?")
+            st.write("Booking.com vs. Direct vs. Expedia.")
 
         with rms_tabs[9]:
             st.subheader("🤖 AI Pricing Recommendations")
-            st.write("Byggt á demand, events og historical data.")
             recs = kpi_edit[kpi_edit['Aðgerð'].str.contains('🔴|🔵')].copy()
             if not recs.empty:
                 st.warning("AI Ráðleggingar fundnar!")
                 st.dataframe(recs[['Dagsetning', 'Aðgerð']])
             else:
-                st.success("Verðlagning er í kjörstöðu miðað við AI greiningu.")
+                st.success("Verðlagning er í kjörstöðu.")
 
         # --- EXCEL ---
         st.markdown("---")
