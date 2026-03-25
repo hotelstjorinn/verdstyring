@@ -162,7 +162,6 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
 # ==========================================
 def main():
     # --- ÖRYGGISNET FYRIR SESSION STATE ---
-    # Þetta kemur í veg fyrir öll KeyError hrun, sama hvað gerist!
     vistaðar_stillingar = load_settings() or {}
     
     if "mitt_hotel_nafn" not in st.session_state:
@@ -174,7 +173,6 @@ def main():
     if "keppinautar" not in st.session_state:
         st.session_state["keppinautar"] = vistaðar_stillingar.get("keppinautar", {})
 
-    # Ef nafn er tómt, krefjumst við skráningar áður en haldið er áfram
     if st.session_state["mitt_hotel_nafn"] == "":
         st.title("🏨 Velkomin(n) - Skráðu þitt hótel")
         m_nafn = st.text_input("Nafn á þínu hóteli")
@@ -188,11 +186,10 @@ def main():
                 st.session_state["mitt_hotel_flokkur"] = m_flokkur
                 save_settings(m_nafn, m_herb, m_flokkur, st.session_state["keppinautar"])
                 st.rerun()
-        return  # Mikilvægt: Stoppar keyrslu hér þar til gögn eru klár!
+        return 
 
     st.title("📊 Hótelstjórinn - Advanced Revenue System")
 
-    # Nú getum við teiknað hliðarstikuna án þess að fá villur
     st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}**\n- **Flokkur:** {st.session_state['mitt_hotel_flokkur']}\n- **Fjöldi:** {st.session_state['mitt_hotel_herb']} herb.")
     
     if st.sidebar.button("Breyta mínu hóteli"):
@@ -211,10 +208,9 @@ def main():
             save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['mitt_hotel_flokkur'], st.session_state['keppinautar'])
             st.rerun()
 
-   if len(st.session_state['keppinautar']) > 0:
+    if len(st.session_state['keppinautar']) > 0:
         st.sidebar.markdown("### Valdir keppinautar:")
         for k_hotel, k_info in st.session_state['keppinautar'].items():
-            # Öryggisnet sem grípur gömul vistuð gögn
             if isinstance(k_info, dict):
                 st.sidebar.markdown(f"- **{k_hotel}** \n  *(Flokkur: {k_info.get('flokkur', 'Standard')} | {k_info.get('fjoldi', 0)} herb.)*")
             else:
@@ -557,7 +553,7 @@ def main():
                 chart1.set_size({'width': 720, 'height': 400})
                 worksheet1.insert_chart('F2', chart1)
 
-                skyrsla_ut = df_skyrsla[['Dagsetning', 'Vikudagur', 'Mitt_Verð', 'Keppinautar_Meðal varðandi', 'Verðmismunur (ISK)', 'Verðvísitala (%)']].copy()
+                skyrsla_ut = df_skyrsla[['Dagsetning', 'Vikudagur', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðmismunur (ISK)', 'Verðvísitala (%)']].copy()
                 skyrsla_ut.rename(columns={'Mitt_Verð': 'Mitt Hótel (ISK)', 'Keppinautar_Meðalverð': 'Keppinautar Vegið (ISK)'}, inplace=True)
                 skyrsla_ut.to_excel(writer, sheet_name='Verðvísitala', index=False)
                 
