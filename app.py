@@ -65,10 +65,11 @@ def athuga_lykilord():
         st.text_input("Lykilorð", type="password", on_change=lykilord_slegid_inn, key="lykilorð_input")
         st.error("😕 Rangt lykilorð, reyndu aftur.")
         return False
-    else: return True
+    else:
+        return True
 
 # ==========================================
-# API GAGNASÖFNUN (MEÐ BOOKING ID)
+# API GAGNASÖFNUN (MEÐ BOOKING ID, ÁN FLOKKA)
 # ==========================================
 def saekja_raungogn(hotel_dict, fjoldi_daga):
     API_KEY = "aa73991419msh780ae4bacd33dc3p12ac5fjsn494bf3cba6a6" 
@@ -113,7 +114,7 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
     return pd.DataFrame(gogn)
 
 # ==========================================
-# MAIN APP
+# AÐAL FORRITIÐ
 # ==========================================
 def main():
     v_stilla = load_settings() or {}
@@ -122,10 +123,10 @@ def main():
     if "keppinautar" not in st.session_state: st.session_state["keppinautar"] = v_stilla.get("keppinautar", {})
 
     if st.session_state["mitt_hotel_nafn"] == "":
-        st.title("🏨 Skráðu þitt hótel")
+        st.title("🏨 Velkomin(n) - Skráðu þitt hótel")
         m_nafn = st.text_input("Nafn á þínu hóteli")
-        m_herb = st.number_input("Fjöldi herbergja", min_value=1, value=50)
-        if st.button("Vista", type="primary"):
+        m_herb = st.number_input("Heildarfjöldi herbergja", min_value=1, value=50)
+        if st.button("Vista og halda áfram", type="primary"):
             st.session_state.update({"mitt_hotel_nafn": m_nafn, "mitt_hotel_herb": m_herb})
             save_settings(m_nafn, m_herb, st.session_state["keppinautar"])
             st.rerun()
@@ -133,16 +134,16 @@ def main():
 
     st.title("📊 Hótelstjórinn - Advanced Revenue System")
     
-    # Sidebar
+    # --- SIDEBAR ---
     st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}** ({st.session_state['mitt_hotel_herb']} herb.)")
     if st.sidebar.button("Breyta mínu hóteli"):
         st.session_state["mitt_hotel_nafn"] = ""; st.rerun()
     
     st.sidebar.markdown("---")
     st.sidebar.header("Bæta við Keppinauti")
-    n_k = st.sidebar.text_input("Nafn")
-    k_h = st.sidebar.number_input("Fjöldi herbergja (keppinautur)", min_value=1, value=20)
-    if st.sidebar.button("Bæta við"):
+    n_k = st.sidebar.text_input("Nafn á keppinauti")
+    k_h = st.sidebar.number_input("Fjöldi herbergja hjá keppinauti", min_value=1, value=20)
+    if st.sidebar.button("Bæta við keppinauti"):
         st.session_state['keppinautar'][n_k] = {"fjoldi": k_h}
         save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['keppinautar'])
         st.rerun()
@@ -151,63 +152,78 @@ def main():
         st.sidebar.markdown("### Valdir keppinautar:")
         kepp_listi = list(st.session_state['keppinautar'].keys())
         for h_nafn in kepp_listi:
-            c_k1, c_k2 = st.sidebar.columns([4, 1])
-            c_k1.markdown(f"- **{h_nafn}** ({st.session_state['keppinautar'][h_nafn].get('fjoldi', 0)} herb.)")
-            if c_k2.button("🗑️", key=f"del_{h_nafn}"):
+            c1, c2 = st.sidebar.columns([4, 1])
+            c1.markdown(f"- **{h_nafn}** ({st.session_state['keppinautar'][h_nafn].get('fjoldi', 0)} herb.)")
+            if c2.button("🗑️", key=f"del_{h_nafn}"):
                 del st.session_state['keppinautar'][h_nafn]
                 save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], st.session_state['keppinautar'])
                 st.rerun()
+                
+        if st.sidebar.button("Hreinsa alla keppinauta"):
+            st.session_state['keppinautar'] = {}
+            save_settings(st.session_state['mitt_hotel_nafn'], st.session_state['mitt_hotel_herb'], {})
+            st.rerun()
 
     c1, c2, c3 = st.columns(3)
     d = 0
-    if c1.button("Sækja núna"): d = 1
-    if c2.button("Sækja 7 daga"): d = 7
-    if c3.button("Sækja 30 daga", type="primary"): d = 30
+    if c1.button("Sækja verð núna"): d = 1
+    if c2.button("Sækja verð næstu 7 daga"): d = 7
+    if c3.button("Sækja verð næstu 30 daga", type="primary"): d = 30
 
     if d > 0:
-        l_gogn = {st.session_state['mitt_hotel_nafn']: {"fjoldi": st.session_state['mitt_hotel_herb']}}
-        l_gogn.update(st.session_state['keppinautar'])
-        res_df = saekja_raungogn(l_gogn, d)
+        leitargogn = {st.session_state['mitt_hotel_nafn']: {"fjoldi": st.session_state['mitt_hotel_herb']}}
+        leitargogn.update(st.session_state['keppinautar'])
+        res_df = saekja_raungogn(leitargogn, d)
         st.session_state['api_gogn'] = res_df
         st.session_state['dagar_valdir'] = d
         if not res_df.empty:
             try:
                 db.append_rows(res_df.astype(str).values.tolist())
-                st.toast("✅ Vistuð sjálfvirkt í Pace!", icon="💾")
+                st.toast("✅ Gögn vistuð sjálfvirkt í Pace!", icon="💾")
             except: pass
 
-    df = st.session_state.get('api_gogn', pd.DataFrame())
-    if not df.empty:
-        df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)']).astype(int)
+    df_raw = st.session_state.get('api_gogn', pd.DataFrame())
+    if not df_raw.empty:
+        # BÚUM TIL HREINT DATAFRAME ÁN TVÍTUNGA LÍNA (Lægsta verð valið per dag/hótel)
+        df = df_raw.groupby(['Dagsetning_obj', 'Hótel', 'Booking ID', 'Fjöldi herbergja'])['Verð (ISK)'].min().reset_index()
+        
         df['Dagsetning'] = pd.to_datetime(df['Dagsetning_obj']).dt.strftime("%d.%m")
         isl_dagar = {0:'Mán', 1:'Þri', 2:'Mið', 3:'Fim', 4:'Fös', 5:'Lau', 6:'Sun'}
         df['Vikudagur'] = pd.to_datetime(df['Dagsetning_obj']).dt.dayofweek.map(isl_dagar)
         
         # --- TAFLA HLIÐ VIÐ HLIÐ ---
+        st.markdown("---")
         st.subheader("Verðyfirlit hlið við hlið")
-        # Við veljum MINSTA verðið ef mörg herbergi finnast fyrir sama hótel (Booking ID dálkurinn veldur þessu)
-        df_display = df.groupby(['Dagsetning', 'Vikudagur', 'Hótel']).agg({'Verð (ISK)': 'min', 'Booking ID': 'first'}).reset_index()
-        
-        pivot = df_display.pivot_table(index=['Dagsetning', 'Vikudagur'], columns='Hótel', values='Verð (ISK)', aggfunc='min').reset_index()
+        pivot = df.pivot_table(index=['Dagsetning', 'Vikudagur'], columns='Hótel', values='Verð (ISK)', aggfunc='min').reset_index()
         pivot_syna = pivot.copy()
         for col in pivot_syna.columns:
             if col not in ['Dagsetning', 'Vikudagur']:
                 pivot_syna[col] = pivot_syna[col].apply(lambda x: f"{int(x):,}".replace(",", ".") + " ISK" if pd.notna(x) else "Uppselt")
         st.dataframe(pivot_syna, use_container_width=True, hide_index=True)
 
-        # --- VERÐÞRÓUN ---
-        st.subheader("Verðþróun")
-        fig_main = px.bar(df_display[df_display['Verð (ISK)']>0], x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group')
+        # --- AÐAL SÚLURITIÐ (VERÐÞRÓUN) ---
+        st.subheader("Verðþróun (Súlurit)")
+        # Hér kemur Booking ID fram í hover_data
+        fig_main = px.bar(df[df['Verð (ISK)']>0], x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group', hover_data=["Booking ID"])
         st.plotly_chart(fig_main, use_container_width=True)
 
-        # --- KPI ---
+        # --- KPI ÚTREIKNINGAR ---
         df_l = df[df['Verð (ISK)'] > 0]
         m_nafn = st.session_state['mitt_hotel_nafn']
-        df_m = df_l[df_l['Hótel'] == m_nafn].groupby('Dagsetning')['Verð (ISK)'].mean().reset_index().rename(columns={'Verð (ISK)':'Mitt_V'})
+        
+        if not df_l[df_l['Hótel'] == m_nafn].empty:
+            df_m = df_l[df_l['Hótel'] == m_nafn].groupby('Dagsetning')['Verð (ISK)'].mean().reset_index().rename(columns={'Verð (ISK)':'Mitt_V'})
+        else:
+            df_m = pd.DataFrame(columns=['Dagsetning', 'Mitt_V'])
+            
         df_k = df_l[df_l['Hótel'] != m_nafn].copy()
-        df_k['Vægi'] = df_k['Verð (ISK)'] * df_k['Fjöldi herbergja']
-        k_avg = df_k.groupby('Dagsetning').agg(SV=('Vægi','sum'), SH=('Fjöldi herbergja','sum')).reset_index()
-        k_avg['Markad_V'] = (k_avg['SV']/k_avg['SH']).round(0).fillna(0)
+        
+        if not df_k.empty:
+            df_k['Vægi'] = df_k['Verð (ISK)'] * df_k['Fjöldi herbergja']
+            k_avg = df_k.groupby('Dagsetning').agg(SV=('Vægi','sum'), SH=('Fjöldi herbergja','sum')).reset_index()
+            k_avg['Markad_V'] = (k_avg['SV']/k_avg['SH']).round(0).fillna(0)
+        else:
+            k_avg = pd.DataFrame(columns=['Dagsetning', 'Markad_V'])
         
         kpi_base = pd.merge(df_m, k_avg[['Dagsetning','Markad_V']], on='Dagsetning', how='outer').fillna(0)
         kpi_base['Vísitala (%)'] = np.where(kpi_base['Markad_V']>0, (kpi_base['Mitt_V']/kpi_base['Markad_V']*100).round(0).astype(int), 0)
@@ -221,6 +237,8 @@ def main():
         st.subheader("⚙️ KPI & Tekjustýring")
         kpi_edit = st.data_editor(kpi_base, hide_index=True, use_container_width=True)
         st.session_state['Seld_herb'] = kpi_edit['Seld herbergi'].tolist()
+        
+        # Allt formattað sem INT (heilar tölur)
         kpi_edit['Nýting (%)'] = (kpi_edit['Seld herbergi'] / st.session_state['mitt_hotel_herb'] * 100).round(0).astype(int)
         kpi_edit['RevPAR'] = (kpi_edit['Mitt_V'] * kpi_edit['Nýting (%)'] / 100).round(0).astype(int)
         
@@ -228,28 +246,87 @@ def main():
             if r['Nýting (%)'] >= 80 and r['Vísitala (%)'] < 100: return "🔴 Hækka verð strax!"
             if r['Nýting (%)'] < 40 and r['Vísitala (%)'] > 105: return "🔵 Lækka verð"
             return "🟡 Fylgjast með"
+            
         kpi_edit['Aðgerð'] = kpi_edit.apply(stefna, axis=1)
         st.dataframe(kpi_edit[['Dagsetning','Seld herbergi','Nýting (%)','RevPAR','Aðgerð']], use_container_width=True, hide_index=True)
 
-        # RMS FLIPAR
+        # ==========================================
+        # 🚀 RMS ÍTARLEGAR SKÝRSLUR
+        # ==========================================
         st.markdown("---")
         st.header("🚀 RMS Ítarlegar Skýrslur")
-        rms_tabs = st.tabs(["1. Pricing Calendar", "2. Demand vs Price", "3. Elasticity", "4. AI Recs"])
+        rms_tabs = st.tabs([
+            "1. Pricing Calendar", "2. Demand vs Price", "3. Elasticity", 
+            "4. Pace vs Price", "5. Competitor Shop", "6. Group Displacement", 
+            "7. Opportunity", "8. Occupancy Matrix", "9. Channels", "10. AI Recs"
+        ])
+        
         with rms_tabs[0]:
-            st.dataframe(kpi_edit[['Dagsetning', 'Mitt_V', 'Nýting (%)', 'RevPAR']], use_container_width=True, hide_index=True)
+            st.subheader("📅 1. Pricing Calendar (Verðdagatal)")
+            cal_view = kpi_edit[['Dagsetning', 'Mitt_V', 'Nýting (%)', 'RevPAR']].copy()
+            st.dataframe(cal_view, use_container_width=True, hide_index=True)
+            
         with rms_tabs[1]:
-            st.plotly_chart(px.bar(kpi_edit, x="Nýting (%)", y="Mitt_V", title="Eftirspurn"), use_container_width=True)
+            st.subheader("📊 2. Demand vs Price")
+            fig_demand = px.bar(kpi_edit, x="Nýting (%)", y="Mitt_V", color="Dagsetning", title="Eftirspurn vs. Verð", labels={"Mitt_V": "Verð (ISK)"})
+            st.plotly_chart(fig_demand, use_container_width=True)
+            
         with rms_tabs[2]:
+            st.subheader("🧪 3. Price Elasticity")
             st.line_chart(kpi_edit.set_index('Dagsetning')[['Vísitala (%)', 'Nýting (%)']])
-        with rms_tabs[3]:
-            st.dataframe(kpi_edit[['Dagsetning', 'Mitt_V', 'Aðgerð']], use_container_width=True, hide_index=True)
 
-        # EXCEL
+        with rms_tabs[3]:
+            st.subheader("🏎️ 4. Booking Pace vs Price")
+            fig_pace = px.scatter(kpi_edit, x="Mitt_V", y="Seld herbergi", size="Nýting (%)", color="Dagsetning", labels={"Mitt_V": "Mitt Verð"})
+            st.plotly_chart(fig_pace, use_container_width=True)
+
+        with rms_tabs[4]:
+            st.subheader("🕵️ 5. Competitor Pricing (Rate Shopping)")
+            st.dataframe(pivot_syna, use_container_width=True)
+
+        with rms_tabs[5]:
+            st.subheader("👥 6. Group Displacement")
+            disp = kpi_edit[['Dagsetning', 'RevPAR']].copy()
+            disp['Min Group Rate'] = (disp['RevPAR'] * 1.1).round(0).astype(int)
+            st.dataframe(disp, use_container_width=True, hide_index=True)
+
+        with rms_tabs[6]:
+            st.subheader("💎 7. Revenue Opportunity")
+            opp_df = kpi_edit[['Dagsetning', 'Verðmismunur (ISK)']].copy()
+            opp_df['Töpuð Tækifæri'] = opp_df['Verðmismunur (ISK)'].apply(lambda x: abs(x) if x < 0 else 0).round(0).astype(int)
+            st.bar_chart(opp_df.set_index('Dagsetning')['Töpuð Tækifæri'])
+
+        with rms_tabs[7]:
+            st.subheader("🔲 8. Price vs Occupancy Matrix")
+            st.table(pd.DataFrame({
+                "Nýting": ["<30%", "30-70%", "70-90%", ">90%"],
+                "Aðgerð": ["Lágmarksverð / Tilboð", "Fylgjast með markaði", "Hækka verð jafnt og þétt", "Maximize - Hæsta mögulega verð"]
+            }))
+
+        with rms_tabs[8]:
+            st.subheader("🌐 9. Channel Performance")
+            st.write("Áætluð ADR dreifing yfir sölurásir:")
+            st.table(pd.DataFrame({
+                "Rás": ["Booking.com", "Expedia", "Direct (Vefur)"], 
+                "ADR (ISK)": [(kpi_edit['Mitt_V'].mean()*0.85).round(0).astype(int), 
+                              (kpi_edit['Mitt_V'].mean()*0.82).round(0).astype(int), 
+                              (kpi_edit['Mitt_V'].mean()).round(0).astype(int)]
+            }))
+
+        with rms_tabs[9]:
+            st.subheader("🤖 10. AI Pricing Recommendations")
+            ai_view = kpi_edit.copy()
+            ai_view['Rökstuðningur'] = np.where(ai_view['Aðgerð'].str.contains('🔴'), "Há nýting & lágt verð", 
+                                       np.where(ai_view['Aðgerð'].str.contains('🔵'), "Lág nýting & of hátt verð", "Staðan er í jafnvægi"))
+            st.dataframe(ai_view[['Dagsetning', 'Mitt_V', 'Aðgerð', 'Rökstuðningur']], use_container_width=True, hide_index=True)
+
+        # --- EXCEL ÚTFLUTNINGUR ---
+        st.markdown("---")
         out = io.BytesIO()
         with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
             kpi_edit.to_excel(writer, sheet_name='Tekjustýring', index=False)
-            pivot.to_excel(writer, sheet_name='Verðfylki', index=False)
+            pivot.to_excel(writer, sheet_name='Verðfylki (Matrix)', index=False)
             df.to_excel(writer, sheet_name='Hrá gögn', index=False)
-        st.download_button("📥 Sækja Mega Excel Skýrslu", out.getvalue(), f"Report_{datetime.date.today()}.xlsx")
+        st.download_button("📥 Sækja Mega Excel Skýrslu", out.getvalue(), f"Report_{datetime.date.today()}.xlsx", type="primary")
 
 if athuga_lykilord(): main()
