@@ -161,24 +161,26 @@ def saekja_raungogn(hotel_dict, fjoldi_daga):
 # AÐAL FORRITIÐ
 # ==========================================
 def main():
+    # --- ÖRYGGISNET FYRIR SESSION STATE ---
+    # Þetta kemur í veg fyrir öll KeyError hrun, sama hvað gerist!
+    vistaðar_stillingar = load_settings() or {}
+    
     if "mitt_hotel_nafn" not in st.session_state:
-        vistaðar_stillingar = load_settings()
-        if vistaðar_stillingar:
-            st.session_state["mitt_hotel_nafn"] = vistaðar_stillingar.get("mitt_hotel_nafn", "")
-            st.session_state["mitt_hotel_herb"] = vistaðar_stillingar.get("mitt_hotel_herb", 0)
-            st.session_state["mitt_hotel_flokkur"] = vistaðar_stillingar.get("mitt_hotel_flokkur", "Standard")
-            st.session_state["keppinautar"] = vistaðar_stillingar.get("keppinautar", {})
-        else:
-            st.session_state["mitt_hotel_nafn"] = ""
-            st.session_state["mitt_hotel_herb"] = 0
-            st.session_state["mitt_hotel_flokkur"] = "Standard"
-            st.session_state["keppinautar"] = {}
+        st.session_state["mitt_hotel_nafn"] = vistaðar_stillingar.get("mitt_hotel_nafn", "")
+    if "mitt_hotel_herb" not in st.session_state:
+        st.session_state["mitt_hotel_herb"] = vistaðar_stillingar.get("mitt_hotel_herb", 0)
+    if "mitt_hotel_flokkur" not in st.session_state:
+        st.session_state["mitt_hotel_flokkur"] = vistaðar_stillingar.get("mitt_hotel_flokkur", "Standard")
+    if "keppinautar" not in st.session_state:
+        st.session_state["keppinautar"] = vistaðar_stillingar.get("keppinautar", {})
 
+    # Ef nafn er tómt, krefjumst við skráningar áður en haldið er áfram
     if st.session_state["mitt_hotel_nafn"] == "":
         st.title("🏨 Velkomin(n) - Skráðu þitt hótel")
         m_nafn = st.text_input("Nafn á þínu hóteli")
         m_flokkur = st.text_input("Hvaða herbergjaflokk viltu fylgjast með? (t.d. Standard, Superior)", value="Standard")
         m_herb = st.number_input(f"Fjöldi herbergja í flokknum '{m_flokkur}'", min_value=1, value=50, step=1)
+        
         if st.button("Vista og halda áfram", type="primary"):
             if m_nafn:
                 st.session_state["mitt_hotel_nafn"] = m_nafn
@@ -186,50 +188,13 @@ def main():
                 st.session_state["mitt_hotel_flokkur"] = m_flokkur
                 save_settings(m_nafn, m_herb, m_flokkur, st.session_state["keppinautar"])
                 st.rerun()
-        return 
+        return  # Mikilvægt: Stoppar keyrslu hér þar til gögn eru klár!
 
     st.title("📊 Hótelstjórinn - Advanced Revenue System")
 
+    # Nú getum við teiknað hliðarstikuna án þess að fá villur
     st.sidebar.markdown(f"### 🏨 Mitt Hótel:\n**{st.session_state['mitt_hotel_nafn']}**\n- **Flokkur:** {st.session_state['mitt_hotel_flokkur']}\n- **Fjöldi:** {st.session_state['mitt_hotel_herb']} herb.")
-import streamlit as st
-
-# --- 1. UPPSETNING Á MINNI (Kemur í veg fyrir KeyError hrunið) ---
-# Athugum hvort breyturnar séu til, annars búum við þær til með upphafsgildum
-if 'mitt_hotel_nafn' not in st.session_state:
-    st.session_state['mitt_hotel_nafn'] = "Sæki gögn..."
-if 'mitt_hotel_flokkur' not in st.session_state:
-    st.session_state['mitt_hotel_flokkur'] = "Flokka..."
-if 'mitt_hotel_fjoldi' not in st.session_state:
-    st.session_state['mitt_hotel_fjoldi'] = 0
-
-# --- 2. SJÁLFVIRK GAGNASÆKNI OG FLOKKUN ---
-def saekja_og_flokka_herbergi():
-    """
-    Hér sækir kerfið gögnin úr gagnagrunninum þínum og flokkar þau.
-    """
-    # ATH: Hér skrifar þú þinn eigin gagnagrunnskóða (SQL eða álíka)
-    # Dæmi: df = keyra_sql_fyrirspurn("SELECT nafn, flokkur, fjoldi FROM hotel_gogn")
     
-    # GERVI-GÖGN TIL AÐ SÝNA VIRKNI (Þú skiptir þessu út fyrir þín raunverulegu gögn):
-    sjalfvirkt_nafn = "Hótel Dæmi" 
-    sjalfvirkur_flokkur = "Standard Herbergi" # Hér myndirðu láta kerfið reikna flokkinn
-    sjalfvirkur_fjoldi = 25
-    
-    # Vistum sjálfvirku gögnin í minnið (session_state)
-    st.session_state['mitt_hotel_nafn'] = sjalfvirkt_nafn
-    st.session_state['mitt_hotel_flokkur'] = sjalfvirkur_flokkur
-    st.session_state['mitt_hotel_fjoldi'] = sjalfvirkur_fjoldi
-
-# --- 3. KEYRA SJÁLFVIRKNINA AÐEINS EINU SINNI VIÐ UPPBYRJUN ---
-if 'gogn_eru_tilbuin' not in st.session_state:
-    saekja_og_flokka_herbergi() # Keyrum fallið sem græjar þetta
-    st.session_state['gogn_eru_tilbuin'] = True # Merkjum að þetta sé klárt
-
-# --- 4. HLIÐARSTIKAN ÞÍN (Sama lína og var að hrynja hjá þér áður) ---
-# Nú mun þetta virka snurðulaust!
-st.sidebar.markdown(f"### 🏨 Mitt Hótel: **{st.session_state['mitt_hotel_nafn']}**\n"
-                    f"**Flokkur:** {st.session_state['mitt_hotel_flokkur']}\n"
-                    f"**Fjöldi:** {st.session_state['mitt_hotel_fjoldi']}")
     if st.sidebar.button("Breyta mínu hóteli"):
         st.session_state["mitt_hotel_nafn"] = ""
         st.rerun()
@@ -293,7 +258,6 @@ st.sidebar.markdown(f"### 🏨 Mitt Hótel: **{st.session_state['mitt_hotel_nafn
                 df_til_ad_vista = df.copy() 
                 df_til_ad_vista["Sótt klukkan"] = nuna
                 df_til_ad_vista["Dagsetning_obj"] = df_til_ad_vista["Dagsetning_obj"].astype(str)
-                # Athugið: Bætt við "Herbergjaflokkur" dálknum - þarf að uppfæra Google Sheet!
                 dalkar = ["Sótt klukkan", "Dagsetning_obj", "Dagsetning", "Vikudagur", "Hótel", "Herbergjaflokkur", "Fjöldi herbergja", "Verð (ISK)", "Staða"]
                 df_til_ad_vista = df_til_ad_vista[dalkar]
 
@@ -588,7 +552,7 @@ st.sidebar.markdown(f"### 🏨 Mitt Hótel: **{st.session_state['mitt_hotel_nafn
                 chart1.set_size({'width': 720, 'height': 400})
                 worksheet1.insert_chart('F2', chart1)
 
-                skyrsla_ut = df_skyrsla[['Dagsetning', 'Vikudagur', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðmismunur (ISK)', 'Verðvísitala (%)']].copy()
+                skyrsla_ut = df_skyrsla[['Dagsetning', 'Vikudagur', 'Mitt_Verð', 'Keppinautar_Meðal varðandi', 'Verðmismunur (ISK)', 'Verðvísitala (%)']].copy()
                 skyrsla_ut.rename(columns={'Mitt_Verð': 'Mitt Hótel (ISK)', 'Keppinautar_Meðalverð': 'Keppinautar Vegið (ISK)'}, inplace=True)
                 skyrsla_ut.to_excel(writer, sheet_name='Verðvísitala', index=False)
                 
