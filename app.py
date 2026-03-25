@@ -211,23 +211,29 @@ def main():
         df['Verð (ISK)'] = pd.to_numeric(df['Verð (ISK)'], errors='coerce').fillna(0).astype(int)
         df['Verð sýnt'] = df['Verð (ISK)'].apply(lambda x: f"{x:,}".replace(",", ".") if x > 0 else "")
         df['Dagsetning'] = pd.to_datetime(df['Dagsetning_obj']).dt.strftime("%d.%m")
+        
+        # BÆTT VIÐ: Vikudagar
+        islenskir_dagar = {0: 'Mán', 1: 'Þri', 2: 'Mið', 3: 'Fim', 4: 'Fös', 5: 'Lau', 6: 'Sun'}
+        df['Vikudagur'] = pd.to_datetime(df['Dagsetning_obj']).dt.dayofweek.map(islenskir_dagar)
+        
         df_laust = df[df['Verð (ISK)'] > 0].copy()
 
         # ==========================================
-        # HLUTI 1: YFIRLIT ALLRA 
+        # HLUTI 1: YFIRLIT ALLRA (Með Vikudögum bætt við)
         # ==========================================
         st.markdown("---")
         st.subheader(f"Verðyfirlit ({st.session_state['dagar_valdir']} dagar)")
         
-        syndir_dalkar = ['Dagsetning', 'Hótel', 'Fjöldi herbergja', 'Verð sýnt', 'Staða']
+        syndir_dalkar = ['Dagsetning', 'Vikudagur', 'Hótel', 'Fjöldi herbergja', 'Verð sýnt', 'Staða']
         st.dataframe(df[syndir_dalkar], use_container_width=True)
 
         st.subheader(f"Verðyfirlit hlið við hlið ({st.session_state['dagar_valdir']} dagar)")
         if not df_laust.empty:
-            df_pivot = df_laust.pivot_table(index='Dagsetning', columns='Hótel', values='Verð (ISK)', aggfunc='first')
+            df_pivot = df_laust.pivot_table(index=['Dagsetning', 'Vikudagur'], columns='Hótel', values='Verð (ISK)', aggfunc='first').reset_index()
             for col in df_pivot.columns:
-                df_pivot[col] = df_pivot[col].apply(lambda x: f"{int(x):,} ISK".replace(",", ".") if pd.notna(x) and x > 0 else "Uppselt")
-            st.dataframe(df_pivot, use_container_width=True)
+                if col not in ['Dagsetning', 'Vikudagur']:
+                    df_pivot[col] = df_pivot[col].apply(lambda x: f"{int(x):,} ISK".replace(",", ".") if pd.notna(x) and x > 0 else "Uppselt")
+            st.dataframe(df_pivot, use_container_width=True, hide_index=True)
 
         if not df_laust.empty:
             df_medaltal = df_laust.groupby('Dagsetning')['Verð (ISK)'].mean().reset_index()
@@ -241,6 +247,10 @@ def main():
             df_veg_allir['Vegið'] = df_veg_allir['Summa_Verð_Vægi'] / df_veg_allir['Summa_Herbergi']
 
             df_saman = pd.merge(df_medaltal, df_veg_allir[['Dagsetning', 'Vegið']], on='Dagsetning')
+            # Bætum Vikudegi inn í saman töfluna fyrir línuritin og töflurnar
+            df_dag = df[['Dagsetning', 'Vikudagur']].drop_duplicates()
+            df_saman = pd.merge(df_dag, df_saman, on='Dagsetning')
+            
             df_saman['Venjulegt'] = df_saman['Venjulegt'].round(0).astype(int)
             df_saman['Vegið'] = df_saman['Vegið'].round(0).astype(int)
 
@@ -249,10 +259,10 @@ def main():
             df_saman_syna['Vegið meðalverð'] = df_saman_syna['Vegið'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
             
             st.subheader("Meðalverð markaðar (Venjulegt vs. Vegið)")
-            st.dataframe(df_saman_syna[['Dagsetning', 'Meðalverð', 'Vegið meðalverð']], use_container_width=True)
+            st.dataframe(df_saman_syna[['Dagsetning', 'Vikudagur', 'Meðalverð', 'Vegið meðalverð']], use_container_width=True, hide_index=True)
 
             st.subheader("Verðþróun")
-            fig1 = px.bar(df, x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group')
+            fig1 = px.bar(df, x='Dagsetning', y='Verð (ISK)', color='Hótel', barmode='group', hover_data=['Vikudagur'])
             fig1.add_scatter(x=df_saman['Dagsetning'], y=df_saman['Venjulegt'], mode='lines+markers', name='Meðalverð', line=dict(color='black', dash='dash', width=2))
             fig1.add_scatter(x=df_saman['Dagsetning'], y=df_saman['Vegið'], mode='lines+markers', name='Vegið meðalverð', line=dict(color='red', width=3))
             fig1.update_yaxes(rangemode="tozero")
@@ -281,10 +291,13 @@ def main():
                 df_mitt_einfalt = pd.DataFrame(columns=['Dagsetning', 'Mitt_Verð'])
 
             df_skyrsla = pd.merge(df_veg_kepp[['Dagsetning', 'Keppinautar_Meðalverð']], df_mitt_einfalt, on='Dagsetning', how='outer').fillna(0)
+            df_skyrsla = pd.merge(df_dag, df_skyrsla, on='Dagsetning') # Bætum vikudegi við
             df_skyrsla['Verðvísitala (%)'] = np.where(
                 (df_skyrsla['Keppinautar_Meðalverð'] > 0) & (df_skyrsla['Mitt_Verð'] > 0),
                 ((df_skyrsla['Mitt_Verð'] / df_skyrsla['Keppinautar_Meðalverð']) * 100).round(1), 0
             )
+            # BÆTT VIÐ INN Í APPIÐ: Mismunur í krónum
+            df_skyrsla['Verðmismunur (ISK)'] = df_skyrsla['Mitt_Verð'] - df_skyrsla['Keppinautar_Meðalverð']
 
             st.markdown("---")
             st.subheader("🎯 Samanburður: Þitt Hótel vs. Meðalverð Keppinauta")
@@ -326,7 +339,7 @@ def main():
             st.markdown("---")
             st.subheader("⚙️ KPI & Tekjustýring (Sláðu inn seld herbergi)")
 
-            df_kpi = df_skyrsla[['Dagsetning', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðvísitala (%)']].copy()
+            df_kpi = df_skyrsla[['Dagsetning', 'Vikudagur', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðmismunur (ISK)', 'Verðvísitala (%)']].copy()
             if 'Seld_herb' not in st.session_state:
                 st.session_state['Seld_herb'] = [0] * len(df_kpi)
             
@@ -339,9 +352,10 @@ def main():
                         "🛏️ Seld herbergi (Sláðu inn)", min_value=0, max_value=st.session_state['mitt_hotel_herb'], step=1
                     ),
                     "Mitt_Verð": st.column_config.NumberColumn("ADR (Þitt Verð)", format="%d ISK"),
-                    "Keppinautar_Meðalverð": st.column_config.NumberColumn("Markaðsverð", format="%d ISK")
+                    "Keppinautar_Meðalverð": st.column_config.NumberColumn("Markaðsverð", format="%d ISK"),
+                    "Verðmismunur (ISK)": st.column_config.NumberColumn("Mismunur (ISK)", format="%d ISK")
                 },
-                disabled=["Dagsetning", "Mitt_Verð", "Keppinautar_Meðalverð", "Verðvísitala (%)"],
+                disabled=["Dagsetning", "Vikudagur", "Mitt_Verð", "Keppinautar_Meðalverð", "Verðmismunur (ISK)", "Verðvísitala (%)"],
                 hide_index=True,
                 use_container_width=True
             )
@@ -350,6 +364,8 @@ def main():
 
             kpi_editable['Nýting (%)'] = ((kpi_editable['Seld herbergi'] / st.session_state['mitt_hotel_herb']) * 100).round(1)
             kpi_editable['RevPAR (ISK)'] = (kpi_editable['Mitt_Verð'] * (kpi_editable['Nýting (%)'] / 100)).round(0).astype(int)
+            # BÆTT VIÐ: Heildartekjur 
+            kpi_editable['Heildartekjur (ISK)'] = (kpi_editable['Seld herbergi'] * kpi_editable['Mitt_Verð']).astype(int)
 
             def reikna_stefnu(row):
                 nyt = row['Nýting (%)']
@@ -364,11 +380,11 @@ def main():
             kpi_editable['Verðstefna (Aðgerð)'] = kpi_editable.apply(reikna_stefnu, axis=1)
 
             st.markdown("#### Útreiknuð Staða & Verðstefna")
-            synd_kpi = kpi_editable[['Dagsetning', 'Seld herbergi', 'Nýting (%)', 'RevPAR (ISK)', 'Verðstefna (Aðgerð)']].copy()
+            synd_kpi = kpi_editable[['Dagsetning', 'Vikudagur', 'Seld herbergi', 'Nýting (%)', 'Heildartekjur (ISK)', 'RevPAR (ISK)', 'Verðstefna (Aðgerð)']].copy()
             synd_kpi['RevPAR (ISK)'] = synd_kpi['RevPAR (ISK)'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
+            synd_kpi['Heildartekjur (ISK)'] = synd_kpi['Heildartekjur (ISK)'].apply(lambda x: f"{x:,} ISK".replace(",", "."))
             st.dataframe(synd_kpi, use_container_width=True, hide_index=True)
 
-            # --- HÉR ER ÚTSKÝRINGIN BÆTT VIÐ ---
             st.markdown("""
             **Hvernig hugsar Verðstefnan?**
             * 🔴 **Hækka verð strax!** (Nýting komin yfir 80% EN þú ert ódýrari en markaðurinn).
@@ -384,73 +400,119 @@ def main():
             """)
 
             # ==========================================
-            # HLUTI 4: EXCEL NIÐURHAL MEÐ ÖLLU SAMAN
+            # HLUTI 4: EXCEL NIÐURHAL MEÐ LIFANDI FORMÚLUM!
             # ==========================================
             st.markdown("---")
-            st.subheader("📥 Sækja Mega Excel Skýrslu")
+            st.subheader("📥 Sækja Mega Excel Skýrslu (LIFANDI!)")
             
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                kpi_ut = kpi_editable[['Dagsetning', 'Seld herbergi', 'Nýting (%)', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðvísitala (%)', 'RevPAR (ISK)', 'Verðstefna (Aðgerð)']].copy()
-                kpi_ut.rename(columns={'Mitt_Verð': 'ADR (Mitt Verð)'}, inplace=True)
-                kpi_ut.to_excel(writer, sheet_name='Tekjustýring (KPI)', index=False)
+                workbook = writer.book
+                
+                # Búum til grunninn að Tekjustýringu (KPI) - Setjum tóm/núll í formúlu dálkana svo við getum yfirskrifað þá
+                kpi_ut = kpi_editable[['Dagsetning', 'Vikudagur', 'Seld herbergi']].copy()
+                kpi_ut['Nýting (%)'] = ""
+                kpi_ut['ADR (Mitt Verð)'] = kpi_editable['Mitt_Verð']
+                kpi_ut['Markaðsverð'] = kpi_editable['Keppinautar_Meðalverð']
+                kpi_ut['Verðmismunur (ISK)'] = ""
+                kpi_ut['Verðvísitala (%)'] = ""
+                kpi_ut['RevPAR (ISK)'] = ""
+                kpi_ut['Heildartekjur (ISK)'] = ""
+                kpi_ut['Verðstefna (Aðgerð)'] = "" 
 
-                df_pivot_excel = df_laust.pivot_table(index='Dagsetning_obj', columns='Hótel', values='Verð (ISK)', aggfunc='first')
-                df_pivot_excel.index = pd.to_datetime(df_pivot_excel.index).date
-                df_pivot_excel.index.name = 'Dagsetning'
+                kpi_ut.to_excel(writer, sheet_name='Tekjustýring (KPI)', index=False)
+                worksheet_kpi = writer.sheets['Tekjustýring (KPI)']
+
+                # Excel Stílar
+                pct_format = workbook.add_format({'num_format': '0.0%'})
+                currency_format = workbook.add_format({'num_format': '#,##0 "ISK"'})
+                bold_format = workbook.add_format({'bold': True})
+                
+                # Litir fyrir Conditional Formatting
+                format_green = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+                format_red = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+                format_yellow = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+
+                num_rows = len(kpi_ut)
+                mitt_herb = st.session_state['mitt_hotel_herb']
+                
+                # Skrifum Lifandi Formúlur í Excel Skjalið fyrir hverja röð
+                for i in range(num_rows):
+                    row = i + 2 # Í Excel er röð 1 header, svo gögn byrja í röð 2
+                    
+                    # Dálkur D: Nýting = Seld(C) / Total
+                    worksheet_kpi.write_formula(f'D{row}', f'=C{row}/{mitt_herb}', pct_format)
+                    # Dálkur G: Mismunur = MittVerð(E) - Keppinautar(F)
+                    worksheet_kpi.write_formula(f'G{row}', f'=E{row}-F{row}', currency_format)
+                    # Dálkur H: Vísitala = MittVerð(E) / Keppinautar(F)
+                    worksheet_kpi.write_formula(f'H{row}', f'=IF(F{row}>0, E{row}/F{row}, 0)', pct_format)
+                    # Dálkur I: RevPAR = ADR(E) * Nýting(D)
+                    worksheet_kpi.write_formula(f'I{row}', f'=E{row}*D{row}', currency_format)
+                    # Dálkur J: Heildartekjur = Seld(C) * ADR(E)
+                    worksheet_kpi.write_formula(f'J{row}', f'=C{row}*E{row}', currency_format)
+                    
+                    # Dálkur K: Verðstefna Formúlan stóra!
+                    stefna_formula = f'=IF(D{row}=0, "❔ Vantar gögn", IF(AND(D{row}>=0.8, H{row}<1), "🔴 Hækka verð strax!", IF(AND(D{row}>=0.8, H{row}>=1), "🟢 Sterk staða - Halda verði", IF(AND(D{row}<0.4, H{row}>1.05), "🔵 Lækka verð / Búa til tilboð", IF(AND(D{row}<0.4, H{row}<=1), "🟡 Ódýr, en engin sala.", "🟡 Fylgjast með markaði")))))'
+                    worksheet_kpi.write_formula(f'K{row}', stefna_formula)
+
+                # Bætum við Total/Samtals röð í botninn
+                tot_row = num_rows + 2
+                worksheet_kpi.write(f'B{tot_row}', 'SAMTALS / MEÐALTAL', bold_format)
+                worksheet_kpi.write_formula(f'C{tot_row}', f'=SUM(C2:C{tot_row-1})')
+                worksheet_kpi.write_formula(f'D{tot_row}', f'=AVERAGE(D2:D{tot_row-1})', pct_format)
+                worksheet_kpi.write_formula(f'E{tot_row}', f'=AVERAGE(E2:E{tot_row-1})', currency_format)
+                worksheet_kpi.write_formula(f'F{tot_row}', f'=AVERAGE(F2:F{tot_row-1})', currency_format)
+                worksheet_kpi.write_formula(f'G{tot_row}', f'=AVERAGE(G2:G{tot_row-1})', currency_format)
+                worksheet_kpi.write_formula(f'H{tot_row}', f'=AVERAGE(H2:H{tot_row-1})', pct_format)
+                worksheet_kpi.write_formula(f'I{tot_row}', f'=AVERAGE(I2:I{tot_row-1})', currency_format)
+                worksheet_kpi.write_formula(f'J{tot_row}', f'=SUM(J2:J{tot_row-1})', currency_format)
+
+                # Setjum inn Conditional Formatting á Verðstefnu dálkinn
+                worksheet_kpi.conditional_format(f'K2:K{num_rows+1}', {'type': 'text', 'criteria': 'containing', 'value': 'Sterk staða', 'format': format_green})
+                worksheet_kpi.conditional_format(f'K2:K{num_rows+1}', {'type': 'text', 'criteria': 'containing', 'value': 'Hækka verð', 'format': format_red})
+                worksheet_kpi.conditional_format(f'K2:K{num_rows+1}', {'type': 'text', 'criteria': 'containing', 'value': 'Lækka verð', 'format': format_yellow})
+                worksheet_kpi.conditional_format(f'K2:K{num_rows+1}', {'type': 'text', 'criteria': 'containing', 'value': 'Ódýr', 'format': format_yellow})
+
+                worksheet_kpi.set_column('A:B', 12)
+                worksheet_kpi.set_column('C:J', 15)
+                worksheet_kpi.set_column('K:K', 35)
+
+                # --- AFGANGURINN AF EXCEL SKJALINU ---
+                df_pivot_excel = df_laust.pivot_table(index=['Dagsetning_obj', 'Vikudagur'], columns='Hótel', values='Verð (ISK)', aggfunc='first').reset_index()
+                df_pivot_excel['Dagsetning'] = pd.to_datetime(df_pivot_excel['Dagsetning_obj']).dt.date
+                df_pivot_excel = df_pivot_excel.drop(columns=['Dagsetning_obj']).set_index(['Dagsetning', 'Vikudagur'])
                 df_pivot_excel.to_excel(writer, sheet_name='Verðfylki (Matrix)')
                 
-                gogn_ut = df[['Dagsetning_obj', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
+                gogn_ut = df[['Dagsetning_obj', 'Vikudagur', 'Hótel', 'Fjöldi herbergja', 'Verð (ISK)', 'Staða']].copy()
                 gogn_ut.rename(columns={'Dagsetning_obj': 'Dagsetning'}, inplace=True)
                 gogn_ut['Dagsetning'] = pd.to_datetime(gogn_ut['Dagsetning']).dt.date 
                 gogn_ut.to_excel(writer, sheet_name='Öll gögn (Hrá)', index=False)
 
-                medaltal_ut = df_saman[['Dagsetning', 'Venjulegt', 'Vegið']].copy()
+                medaltal_ut = df_saman[['Dagsetning', 'Vikudagur', 'Venjulegt', 'Vegið']].copy()
                 medaltal_ut.rename(columns={'Venjulegt': 'Venjulegt meðalverð', 'Vegið': 'Vegið meðalverð'}, inplace=True)
                 medaltal_ut.to_excel(writer, sheet_name='Meðalverð Allra', index=False)
                 
-                workbook = writer.book
                 worksheet1 = writer.sheets['Meðalverð Allra']
                 chart1 = workbook.add_chart({'type': 'column'})
                 max_row1 = len(medaltal_ut)
-                chart1.add_series({
-                    'name':       ['Meðalverð Allra', 0, 1], 
-                    'categories': ['Meðalverð Allra', 1, 0, max_row1, 0], 
-                    'values':     ['Meðalverð Allra', 1, 1, max_row1, 1], 
-                    'fill':       {'color': '#4C78A8'} 
-                })
-                chart1.add_series({
-                    'name':       ['Meðalverð Allra', 0, 2], 
-                    'categories': ['Meðalverð Allra', 1, 0, max_row1, 0], 
-                    'values':     ['Meðalverð Allra', 1, 2, max_row1, 2], 
-                    'fill':       {'color': '#E45756'} 
-                })
+                chart1.add_series({'name': ['Meðalverð Allra', 0, 2], 'categories': ['Meðalverð Allra', 1, 0, max_row1, 0], 'values': ['Meðalverð Allra', 1, 2, max_row1, 2], 'fill': {'color': '#4C78A8'} })
+                chart1.add_series({'name': ['Meðalverð Allra', 0, 3], 'categories': ['Meðalverð Allra', 1, 0, max_row1, 0], 'values': ['Meðalverð Allra', 1, 3, max_row1, 3], 'fill': {'color': '#E45756'} })
                 chart1.set_title({'name': 'Meðalverð á markaðnum'})
                 chart1.set_size({'width': 720, 'height': 400})
-                worksheet1.insert_chart('E2', chart1)
+                worksheet1.insert_chart('F2', chart1)
 
-                skyrsla_ut = df_skyrsla[['Dagsetning', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðvísitala (%)']].copy()
+                skyrsla_ut = df_skyrsla[['Dagsetning', 'Vikudagur', 'Mitt_Verð', 'Keppinautar_Meðalverð', 'Verðmismunur (ISK)', 'Verðvísitala (%)']].copy()
                 skyrsla_ut.rename(columns={'Mitt_Verð': 'Mitt Hótel (ISK)', 'Keppinautar_Meðalverð': 'Keppinautar Vegið (ISK)'}, inplace=True)
                 skyrsla_ut.to_excel(writer, sheet_name='Verðvísitala', index=False)
                 
                 worksheet2 = writer.sheets['Verðvísitala']
                 chart2 = workbook.add_chart({'type': 'line'})
                 max_row2 = len(skyrsla_ut)
-                chart2.add_series({
-                    'name':       ['Verðvísitala', 0, 1], 
-                    'categories': ['Verðvísitala', 1, 0, max_row2, 0], 
-                    'values':     ['Verðvísitala', 1, 1, max_row2, 1], 
-                    'line':       {'color': '#1f77b4', 'width': 2.5} 
-                })
-                chart2.add_series({
-                    'name':       ['Verðvísitala', 0, 2], 
-                    'categories': ['Verðvísitala', 1, 0, max_row2, 0], 
-                    'values':     ['Verðvísitala', 1, 2, max_row2, 2], 
-                    'line':       {'color': '#d62728', 'width': 2.5, 'dash_type': 'dash'} 
-                })
+                chart2.add_series({'name': ['Verðvísitala', 0, 2], 'categories': ['Verðvísitala', 1, 0, max_row2, 0], 'values': ['Verðvísitala', 1, 2, max_row2, 2], 'line': {'color': '#1f77b4', 'width': 2.5} })
+                chart2.add_series({'name': ['Verðvísitala', 0, 3], 'categories': ['Verðvísitala', 1, 0, max_row2, 0], 'values': ['Verðvísitala', 1, 3, max_row2, 3], 'line': {'color': '#d62728', 'width': 2.5, 'dash_type': 'dash'} })
                 chart2.set_title({'name': 'Mitt Hótel vs. Keppinautar'})
                 chart2.set_size({'width': 720, 'height': 400})
-                worksheet2.insert_chart('F2', chart2)
+                worksheet2.insert_chart('H2', chart2)
             
             excel_data = output.getvalue()
             
